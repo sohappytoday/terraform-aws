@@ -1,6 +1,6 @@
 data "aws_ami" "ubuntu_22" {
   most_recent = true
-  owners      = ["099720109477"]  # Canonical 공식 계정
+  owners      = ["099720109477"]
 
   filter {
     name   = "name"
@@ -10,7 +10,7 @@ data "aws_ami" "ubuntu_22" {
 
 data "aws_ami" "ubuntu_24" {
   most_recent = true
-  owners      = ["099720109477"]  # Canonical 공식 계정
+  owners      = ["099720109477"]
 
   filter {
     name   = "name"
