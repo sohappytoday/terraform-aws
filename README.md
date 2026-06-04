@@ -1,5 +1,7 @@
 ## EC2 생성하기
 
+### ec2.tf  
+
 URL 참고
 https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/instance
 
@@ -26,3 +28,26 @@ https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/inst
 - monitoring — 상세 모니터링
 - disable_api_termination — 실수로 삭제 방지
 - tags — 태그
+
+## variables.tf
+
+하드코딩된 값을 변수로 분리시켜 재사용성과 유연성을 높인다.
+
+URL 참고
+https://developer.hashicorp.com/terraform/language/values/variables
+
+
+기본 타입 (string)
+- instance_type — "t2.micro"
+- instance_name — "test-ec2"
+
+선택적으로 뺄 수 있는 것들
+- ami — 어떤 OS를 쓸지 (ubuntu_22, ubuntu_24, rocky_9 등)
+- region — provider.tf의 "ap-northeast-2"
+
+그리고 변수 블록에서 쓸 수 있는 옵션
+- type — 타입 지정 (string, number, bool, list, map)
+- default — 기본값
+- description — 설명
+- validation — 유효성 검사
+- sensitive — 비밀번호 같은 민감한 값 숨김
