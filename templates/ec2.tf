@@ -62,6 +62,17 @@ data "aws_ami" "rocky_8" {
   }
 }
 
+# 리소스 정의 (amazon linux 2023)
+data "aws_ami" "amazon_linux_2023" {
+  most_recent = true
+  owners      = ["amazon"]
+
+  filter {
+    name   = "name"
+    values = ["al2023-ami-*-x86_64"]
+  }
+}
+
 # ec2 인스턴스 생성
 resource "aws_instance" "my_ec2" {
   ami           = data.aws_ami.ubuntu_24.id
