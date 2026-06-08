@@ -78,6 +78,19 @@ terraform fmt
 terraform validate
 ```
 
+### terraform 인스턴스 확인
+```shell
+terraform plan
+```
 
+### terraform 인스턴스 생성
+```shell
+terraform apply
+```
+
+### terraform 인스턴스 종료
+```shell
+terraform destroy
+```
 
 ---
