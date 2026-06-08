@@ -59,8 +59,10 @@ data "aws_ami" "amazon_linux_2023" {
 
 # ec2 인스턴스 생성
 resource "aws_instance" "my_ec2" {
-  ami           = data.aws_ami.ubuntu_24.id
-  instance_type = var.instance_type
+  ami                    = data.aws_ami.ubuntu_24.id
+  instance_type          = var.instance_type
+  key_name               = aws_key_pair.this.key_name
+  vpc_security_group_ids = [aws_security_group.this.id]
 
   root_block_device {
     volume_size = var.root_volume_size

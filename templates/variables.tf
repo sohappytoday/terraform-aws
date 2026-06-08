@@ -22,18 +22,50 @@ variable "root_volume_type" {
   default     = "gp3"
 }
 
+variable "key_pair_name" {
+  type        = string
+  description = "AWS에 등록할 키 페어 이름"
+}
+
+variable "public_key_path" {
+  type        = string
+  description = "로컬에 저장된 SSH 공개키(.pub) 파일 경로"
+}
+
+variable "ssh_allowed_cidr" {
+  type        = string
+  description = "SSH(22번 포트) 접속을 허용할 CIDR 대역"
+}
+
+variable "ingress_rules" {
+  type = list(object({
+    description = string
+    from_port   = number
+    to_port     = number
+    protocol    = string
+    cidr_blocks = list(string)
+  }))
+  description = "보안 그룹에 추가로 열어줄 인바운드 규칙 목록 (SSH 제외)"
+  default = [
+    {
+      description = "HTTP"
+      from_port   = 80
+      to_port     = 80
+      protocol    = "tcp"
+      cidr_blocks = ["0.0.0.0/0"]
+    },
+    {
+      description = "HTTPS"
+      from_port   = 443
+      to_port     = 443
+      protocol    = "tcp"
+      cidr_blocks = ["0.0.0.0/0"]
+    }
+  ]
+}
+
 # VPC 생성 후 사용
 # variable "subnet_id" {
 #   type        = string
 #   description = "EC2를 배치할 서브넷 ID"
-# }
-
-# variable "vpc_security_group_ids" {
-#   type        = list(string)
-#   description = "EC2에 적용할 보안 그룹 ID 목록"
-# }
-
-# variable "key_name" {
-#   type        = string
-#   description = "SSH 접속에 사용할 키페어 이름"
 # }
