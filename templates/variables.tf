@@ -1,7 +1,7 @@
 variable "instance_type" {
   type        = string
   description = "EC2 instance type for the web server"
-  default     = "t2.micro"
+  default     = "t3.micro"
 }
 
 variable "instance_name" {
