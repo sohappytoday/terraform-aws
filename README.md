@@ -52,10 +52,32 @@ https://developer.hashicorp.com/terraform/language/values/variables
 - validation — 유효성 검사
 - sensitive — 비밀번호 같은 민감한 값 숨김
 
-## terraform 문법 확인
+### outputs.tf
+
+리소스의 속성 값을 외부로 노출시켜 확인하거나 재사용할 수 있게 한다.
+
+URL 참고
+https://developer.hashicorp.com/terraform/language/values/outputs
+
+노출하면 유용한 값들
+- instance_id - 생성된 ec2의 ID
+- public_ip - 인스턴스에 접속할 때 쓰는 퍼블릭 IP
+- private_ip - VPC 내부 통신용 사설 IP
+- ami_id - 실제로 선택된 AMI의 ID
+
+
+## Terraform CLI
+
+### terraform 정렬
+```shell
+terraform fmt
+```
+
+### terraform 문법 확인
 ```shell
 terraform validate
 ```
+
 
 
 ---
