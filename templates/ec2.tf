@@ -76,9 +76,14 @@ data "aws_ami" "amazon_linux_2023" {
 # ec2 인스턴스 생성
 resource "aws_instance" "my_ec2" {
   ami           = data.aws_ami.ubuntu_24.id
-  instance_type = "t2.micro"
+  instance_type = var.instance_type
+
+  root_block_device {
+    volume_size = var.root_volume_size
+    volume_type = var.root_volume_type
+  }
 
   tags = {
-    Name = "test-ec2"
+    Name = var.instance_name
   }
 }
