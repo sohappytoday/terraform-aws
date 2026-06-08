@@ -21,7 +21,7 @@ data "aws_ami" "ubuntu_24" {
 
   filter {
     name   = "name"
-    values = ["ubuntu/images/hvm-ssd/ubuntu-noble-24.04-amd64-server-*"]
+    values = ["ubuntu/images/hvm-ssd*/ubuntu-noble-24.04-amd64-server-*"]
   }
 
   filter {
@@ -33,27 +33,11 @@ data "aws_ami" "ubuntu_24" {
 # 리소스 정의 (rocky 9.7)
 data "aws_ami" "rocky_9" {
   most_recent = true
-  owners      = ["648152685816"] # Rocky
+  owners      = ["792107900819"] # Rocky
 
   filter {
     name   = "name"
-    values = ["Rocky-9.7*-x86_64*"]
-  }
-
-  filter {
-    name   = "virtualization-type"
-    values = ["hvm"]
-  }
-}
-
-# 리소스 정의 (rocky 8.10)
-data "aws_ami" "rocky_8" {
-  most_recent = true
-  owners      = ["648152685816"] # Rocky
-
-  filter {
-    name   = "name"
-    values = ["Rocky-8.10*-x86_64*"]
+    values = ["Rocky-9-EC2-Base-9.7*x86_64"]
   }
 
   filter {
