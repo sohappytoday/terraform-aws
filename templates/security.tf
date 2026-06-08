@@ -14,7 +14,7 @@ resource "aws_security_group" "this" {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = [var.ssh_allowed_cidr]
+    cidr_blocks = var.ssh_allowed_cidr
   }
 
   dynamic "ingress" {

@@ -33,8 +33,8 @@ variable "public_key_path" {
 }
 
 variable "ssh_allowed_cidr" {
-  type        = string
-  description = "SSH(22번 포트) 접속을 허용할 CIDR 대역"
+  type        = list(string)
+  description = "SSH(22번 포트) 접속을 허용할 CIDR 대역 목록"
 }
 
 variable "ingress_rules" {

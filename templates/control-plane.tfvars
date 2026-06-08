@@ -4,7 +4,7 @@ root_volume_size = 20
 root_volume_type = "gp3"
 key_pair_name    = "terraform-key"
 public_key_path  = "/home/ubuntu/.ssh/terraform-key.pub"
-ssh_allowed_cidr =  "43.203.224.71/32"
+ssh_allowed_cidr =  "121.134.174.157/32"
 
 ingress_rules = [
   {
