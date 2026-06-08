@@ -29,7 +29,7 @@ https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/inst
 - disable_api_termination — 실수로 삭제 방지
 - tags — 태그
 
-## variables.tf
+### variables.tf
 
 하드코딩된 값을 변수로 분리시켜 재사용성과 유연성을 높인다.
 
@@ -51,3 +51,11 @@ https://developer.hashicorp.com/terraform/language/values/variables
 - description — 설명
 - validation — 유효성 검사
 - sensitive — 비밀번호 같은 민감한 값 숨김
+
+## terraform 문법 확인
+```shell
+terraform validate
+```
+
+
+---
