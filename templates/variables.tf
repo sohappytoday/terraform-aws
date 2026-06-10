@@ -2,33 +2,15 @@
 # EC2 (worker-node)
 # -----------------------------------------------
 
-variable "instance_type" {
-  type        = string
-  description = "EC2 instance type for the web server"
-  default     = "t3.micro"
-}
-
-variable "instance_name" {
-  type        = string
-  description = "EC2 인스턴스 이름 태그"
-  default     = "test-ec2"
-}
-
-variable "root_volume_size" {
-  type        = number
-  description = "루트 볼륨 크기 (GB)"
-  default     = 20
-}
-
-variable "root_volume_type" {
-  type        = string
-  description = "루트 볼륨 타입 (gp2, gp3, io1 등)"
-  default     = "gp3"
-}
-
-variable "key_pair_name" {
-  type        = string
-  description = "AWS에 등록할 키 페어 이름"
+variable "worker_nodes" {
+  type = map(object({
+    instance_type    = string
+    instance_name    = string
+    root_volume_size = number
+    root_volume_type = string
+    key_pair_name    = string
+  }))
+  description = "worker-node 목록. 키는 노드 식별자, 값은 노드별 사양"
 }
 
 variable "public_key_path" {
@@ -77,6 +59,11 @@ variable "ingress_rules" {
 # -----------------------------------------------
 # Lightsail (control-plane)
 # -----------------------------------------------
+
+variable "lightsail_key_pair_name" {
+  type        = string
+  description = "Lightsail에 등록할 키 페어 이름"
+}
 
 variable "lightsail_instance_name" {
   type        = string
