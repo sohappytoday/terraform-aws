@@ -1,4 +1,25 @@
-lightsail_key_pair_name = "terraform-key"
+control_plane_key_pair_name = "terraform-key"
+
+control_plane_port_rules = [
+  {
+    protocol  = "tcp"
+    from_port = 22
+    to_port   = 22
+    cidrs     = ["121.134.174.157/32"]
+  },
+  {
+    protocol  = "tcp"
+    from_port = 80
+    to_port   = 80
+    cidrs     = ["0.0.0.0/0"]
+  },
+  {
+    protocol  = "tcp"
+    from_port = 443
+    to_port   = 443
+    cidrs     = ["0.0.0.0/0"]
+  }
+]
 worker_key_pair_name    = "terraform-key"
 public_key_path         = "/home/ubuntu/.ssh/terraform-key.pub"
 ssh_allowed_cidr = ["121.134.174.157/32"]

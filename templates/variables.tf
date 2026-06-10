@@ -64,42 +64,42 @@ variable "ingress_rules" {
 # Lightsail (control-plane)
 # -----------------------------------------------
 
-variable "lightsail_key_pair_name" {
+variable "control_plane_key_pair_name" {
   type        = string
   description = "Lightsail에 등록할 키 페어 이름"
 }
 
-variable "lightsail_instance_name" {
+variable "control_plane_instance_name" {
   type        = string
   description = "Lightsail 인스턴스 이름"
   default     = "control-plane"
 }
 
-variable "lightsail_availability_zone" {
+variable "control_plane_availability_zone" {
   type        = string
   description = "Lightsail 인스턴스 가용 영역 (예: ap-northeast-2a)"
   default     = "ap-northeast-2a"
 }
 
-variable "lightsail_blueprint_id" {
+variable "control_plane_blueprint_id" {
   type        = string
   description = "OS 이미지 ID (예: ubuntu_22_04)"
   default     = "ubuntu_22_04"
 }
 
-variable "lightsail_bundle_id" {
+variable "control_plane_bundle_id" {
   type        = string
   description = "인스턴스 사양 번들 ID (예: small_3_0 = 2GB RAM, 1vCPU)"
   default     = "small_3_0"
 }
 
-variable "lightsail_ip_address_type" {
+variable "control_plane_ip_address_type" {
   type        = string
   description = "IP 주소 유형 (dualstack, ipv4, ipv6)"
   default     = "dualstack"
 }
 
-variable "lightsail_port_rules" {
+variable "control_plane_port_rules" {
   type = list(object({
     protocol  = string
     from_port = number
