@@ -1,7 +1,6 @@
-# 리소스 정의 (ubuntu 22.04)
 data "aws_ami" "ubuntu_22" {
   most_recent = true
-  owners      = ["099720109477"] # Canonical
+  owners      = ["099720109477"]
 
   filter {
     name   = "name"
@@ -14,7 +13,6 @@ data "aws_ami" "ubuntu_22" {
   }
 }
 
-# 리소스 정의 (ubuntu 24.04)
 data "aws_ami" "ubuntu_24" {
   most_recent = true
   owners      = ["099720109477"]
@@ -30,10 +28,9 @@ data "aws_ami" "ubuntu_24" {
   }
 }
 
-# 리소스 정의 (rocky 9.7)
 data "aws_ami" "rocky_9" {
   most_recent = true
-  owners      = ["792107900819"] # Rocky
+  owners      = ["792107900819"]
 
   filter {
     name   = "name"
@@ -46,7 +43,6 @@ data "aws_ami" "rocky_9" {
   }
 }
 
-# 리소스 정의 (amazon linux 2023)
 data "aws_ami" "amazon_linux_2023" {
   most_recent = true
   owners      = ["amazon"]
@@ -57,8 +53,47 @@ data "aws_ami" "amazon_linux_2023" {
   }
 }
 
-# ec2 인스턴스 생성
-resource "aws_instance" "my_ec2" {
+resource "aws_key_pair" "this" {
+  key_name   = var.key_pair_name
+  public_key = file(var.public_key_path)
+}
+
+resource "aws_security_group" "this" {
+  name        = "${var.instance_name}-sg"
+  description = "Allow SSH inbound traffic"
+
+  ingress {
+    description = "SSH"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = var.ssh_allowed_cidr
+  }
+
+  dynamic "ingress" {
+    for_each = var.ingress_rules
+    content {
+      description = ingress.value.description
+      from_port   = ingress.value.from_port
+      to_port     = ingress.value.to_port
+      protocol    = ingress.value.protocol
+      cidr_blocks = ingress.value.cidr_blocks
+    }
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${var.instance_name}-sg"
+  }
+}
+
+resource "aws_instance" "this" {
   ami                    = data.aws_ami.ubuntu_24.id
   instance_type          = var.instance_type
   key_name               = aws_key_pair.this.key_name
