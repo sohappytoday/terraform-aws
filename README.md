@@ -1,127 +1,184 @@
- ## EC2 생성하기
+ ## Kubernetes HA 클러스터 인프라 구성
+
+Lightsail(control-plane) + EC2(worker-node) 조합으로 Kubernetes 클러스터를 프로비저닝한다.
+
+---
+
+## 디렉토리 구조
+
+```
+templates/
+├── provider.tf            # AWS provider 설정
+├── variables.tf           # 루트 변수 선언 (EC2 + Lightsail)
+├── outputs.tf             # 최종 출력값
+├── ha-cluster.tf          # 모듈 호출 진입점
+├── worker-node.tfvars     # 환경별 변수 값 파일
+└── modules/
+    ├── ec2/               # worker-node 모듈
+    │   ├── main.tf
+    │   ├── variables.tf
+    │   └── outputs.tf
+    └── lightsail/         # control-plane 모듈
+        ├── main.tf
+        ├── variables.tf
+        └── outputs.tf
+```
+
+---
+
+## 파일별 설명
 
 ### provider.tf
 
 사용할 클라우드 provider와 버전, 리전을 선언한다.
 
-URL 참고
-https://registry.terraform.io/providers/hashicorp/aws/latest/docs
-
-- required_providers — provider 출처(`hashicorp/aws`)와 버전 제약(`~> 6.0`)
-- region — 리소스를 생성할 리전 ("ap-northeast-2")
-
-### ec2.tf
-
-URL 참고
-https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/instance
-
-`data "aws_ami"` — 운영체제별 최신 AMI를 동적으로 조회
-- ubuntu_22 — Ubuntu 22.04 (Canonical, owners = "099720109477")
-- ubuntu_24 — Ubuntu 24.04 (Canonical)
-- rocky_9 — Rocky Linux 9.7 (owners = "792107900819")
-- amazon_linux_2023 — Amazon Linux 2023 (owners = "amazon")
-
-각 데이터 소스는 `most_recent`, AMI 이름 패턴(`name` 필터), `virtualization-type`(hvm) 조건으로 최신 AMI ID를 가져온다.
-
-`resource "aws_instance" "my_ec2"`
-- ami — `data.aws_ami.ubuntu_24.id` 사용
-- instance_type — var.instance_type
-- key_name — aws_key_pair.this.key_name (security.tf에서 생성한 키 페어)
-- vpc_security_group_ids — aws_security_group.this.id (security.tf에서 생성한 보안 그룹)
-- root_block_device — 루트 볼륨 크기/타입 (var.root_volume_size, var.root_volume_type)
-- tags — Name = var.instance_name
-
-### security.tf
-
-SSH 접속 및 인바운드 트래픽을 위한 키 페어와 보안 그룹을 정의한다.
-
-URL 참고
-https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/key_pair
-https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/security_group
-
-`resource "aws_key_pair" "this"`
-- key_name — var.key_pair_name
-- public_key — `file(var.public_key_path)`로 로컬 공개키 파일을 읽어 등록
-
-`resource "aws_security_group" "this"`
-- name / tags — `${var.instance_name}-sg`
-- ingress (SSH) — var.ssh_allowed_cidr 대역에서 22번 포트 허용
-- dynamic "ingress" — var.ingress_rules 목록을 순회하며 추가 인바운드 규칙(HTTP, HTTPS 등) 생성
-- egress — 모든 아웃바운드 트래픽 허용 (0.0.0.0/0)
+- `required_providers` — provider 출처(`hashicorp/aws`)와 버전 제약(`~> 6.0`)
+- `region` — 리소스를 생성할 리전 (`ap-northeast-2`)
 
 ### variables.tf
 
-하드코딩된 값을 변수로 분리시켜 재사용성과 유연성을 높인다.
+하드코딩된 값을 변수로 분리해 재사용성과 유연성을 높인다. `tfvars`로 값을 주입받는 창구 역할을 한다.
 
-URL 참고
-https://developer.hashicorp.com/terraform/language/values/variables
+**EC2 (worker-node) 변수**
 
-기본값이 있는 변수
-- instance_type — "t3.micro"
-- instance_name — "test-ec2"
-- root_volume_size — 20 (GB)
-- root_volume_type — "gp3"
-- ingress_rules — HTTP(80), HTTPS(443) 인바운드 규칙 목록 (object 리스트)
+| 변수 | 기본값 | 설명 |
+|---|---|---|
+| `instance_type` | `t3.micro` | EC2 인스턴스 타입 |
+| `instance_name` | `test-ec2` | 인스턴스 이름 태그 |
+| `root_volume_size` | `20` | 루트 볼륨 크기 (GB) |
+| `root_volume_type` | `gp3` | 루트 볼륨 타입 |
+| `key_pair_name` | 없음 | AWS에 등록할 키 페어 이름 |
+| `public_key_path` | 없음 | 로컬 SSH 공개키(.pub) 경로 |
+| `ssh_allowed_cidr` | 없음 | SSH 허용 CIDR 목록 |
+| `ingress_rules` | HTTP/HTTPS | 추가 인바운드 규칙 목록 |
 
-값을 반드시 입력해야 하는 변수 (default 없음, tfvars로 지정)
-- key_pair_name — AWS에 등록할 키 페어 이름
-- public_key_path — 로컬 SSH 공개키(.pub) 파일 경로
-- ssh_allowed_cidr — SSH(22번 포트) 접속을 허용할 CIDR 대역 목록 (list(string))
+**Lightsail (control-plane) 변수**
 
-변수 블록에서 쓸 수 있는 옵션
-- type — 타입 지정 (string, number, bool, list, object, map ...)
-- default — 기본값
-- description — 설명
-- validation — 유효성 검사
-- sensitive — 비밀번호 같은 민감한 값 숨김
+| 변수 | 기본값 | 설명 |
+|---|---|---|
+| `lightsail_instance_name` | `control-plane` | 인스턴스 이름 |
+| `lightsail_availability_zone` | `ap-northeast-2a` | 가용 영역 |
+| `lightsail_blueprint_id` | `ubuntu_22_04` | OS 이미지 ID |
+| `lightsail_bundle_id` | `small_3_0` | 사양 번들 (2GB RAM, 1vCPU) |
+| `lightsail_ip_address_type` | `dualstack` | IP 주소 유형 |
+| `lightsail_port_rules` | `[]` | 개방할 포트 규칙 목록 |
+
+### ha-cluster.tf
+
+모듈을 호출하는 진입점. 어떤 모듈을 어떤 값으로 실행할지 선언한다.
+
+- `module "control_plane"` — `modules/lightsail` 모듈 호출
+- `module "worker_node"` — `modules/ec2` 모듈 호출
 
 ### outputs.tf
 
-리소스의 속성 값을 외부로 노출시켜 확인하거나 재사용할 수 있게 한다.
+모듈이 반환한 값을 최종 출력한다.
 
-URL 참고
-https://developer.hashicorp.com/terraform/language/values/outputs
+- `instance_id` — EC2 인스턴스 ID
+- `public_ip` — 퍼블릭 IP
+- `private_ip` — 프라이빗 IP
+- `ami_id` — 실제 선택된 AMI ID
 
-- instance_id — 생성된 EC2 인스턴스 ID
-- public_ip — 인스턴스에 접속할 때 쓰는 퍼블릭 IP
-- private_ip — VPC 내부 통신용 사설 IP
-- ami_id — 실제로 선택된 AMI의 ID
+### worker-node.tfvars
 
-### tfvars
-
-`templates/control-plane.tfvars` 파일에 환경별 변수 값(키 페어 이름, 공개키 경로, 허용 CIDR 등)을 정의하고, 아래처럼 `-var-file` 옵션으로 지정해 plan/apply/destroy를 실행한다.
+환경별 변수 값을 정의하는 파일. `variables.tf`의 변수에 실제 값을 주입한다.
 
 ```shell
-terraform plan -var-file=control-plane.tfvars
-terraform apply -var-file=control-plane.tfvars
-terraform destroy -var-file=control-plane.tfvars
+terraform apply -var-file=worker-node.tfvars
 ```
+
+### modules/ec2/
+
+**worker-node** EC2 인스턴스를 생성하는 모듈.
+
+- `main.tf` — AMI data source 4종(Ubuntu 22/24, Rocky 9, Amazon Linux 2023), `aws_key_pair`, `aws_security_group`, `aws_instance` 리소스 정의
+- `variables.tf` — 모듈 내부 변수 선언 (루트에서 넘긴 값을 받는 창구)
+- `outputs.tf` — `instance_id`, `public_ip`, `private_ip`, `ami_id` 반환
+
+`aws_security_group`은 SSH 고정 인바운드 + `dynamic "ingress"`로 추가 규칙을 순회한다.
+
+### modules/lightsail/
+
+**control-plane** Lightsail 인스턴스를 생성하는 모듈.
+
+- `main.tf` — `aws_lightsail_key_pair`, `aws_lightsail_instance`, `aws_lightsail_instance_public_ports` 리소스 정의
+- `variables.tf` — 모듈 내부 변수 선언
+- `outputs.tf` — `instance_id`, `public_ip`, `private_ip` 반환
+
+EC2의 `aws_security_group` 대신 `aws_lightsail_instance_public_ports`로 포트를 관리한다. `dynamic "port_info"`로 규칙 목록을 순회한다.
+
+---
+
+## 실행 흐름
+
+`terraform apply -var-file=worker-node.tfvars` 실행 시 아래 순서로 파일을 읽는다.
+
+```
+1. provider.tf
+   └─ AWS provider 설정, 리전 확인
+
+2. variables.tf
+   └─ 변수 목록 확인 (어떤 변수가 있는지 등록)
+
+3. worker-node.tfvars
+   └─ variables.tf의 변수에 실제 값 주입
+
+4. ha-cluster.tf
+   └─ module "control_plane" 발견 → modules/lightsail/ 로 이동
+   └─ module "worker_node"   발견 → modules/ec2/       로 이동
+
+5. modules/lightsail/variables.tf
+   └─ ha-cluster.tf에서 넘긴 값 받음
+
+6. modules/lightsail/main.tf
+   └─ aws_lightsail_instance 등 리소스 정의 읽음
+
+7. modules/lightsail/outputs.tf
+   └─ 모듈이 반환할 값 정의
+
+8. modules/ec2/variables.tf
+   └─ ha-cluster.tf에서 넘긴 값 받음
+
+9. modules/ec2/main.tf
+   └─ aws_instance 등 리소스 정의 읽음
+
+10. modules/ec2/outputs.tf
+    └─ 모듈이 반환할 값 정의
+
+11. outputs.tf
+    └─ module.control_plane.xxx, module.worker_node.xxx 참조해 최종 출력
+```
+
+---
 
 ## Terraform CLI
 
-### terraform 정렬
+### 포맷 정렬
 ```shell
 terraform fmt
 ```
 
-### terraform 문법 확인
+### 문법 확인
 ```shell
 terraform validate
 ```
 
-### terraform 인스턴스 확인
+### 실행 계획 확인
 ```shell
-terraform plan
+terraform plan -var-file=worker-node.tfvars
 ```
 
-### terraform 인스턴스 생성
+### 인프라 생성
 ```shell
-terraform apply
+terraform apply -var-file=worker-node.tfvars
 ```
 
-### terraform 인스턴스 종료
+### 인프라 삭제
 ```shell
-terraform destroy
+terraform destroy -var-file=worker-node.tfvars
 ```
 
----
+### 모듈 초기화 (모듈 추가/변경 후 필수)
+```shell
+terraform init
+```
