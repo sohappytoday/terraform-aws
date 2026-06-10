@@ -1,28 +1,6 @@
-control_plane_key_pair_name = "terraform-key"
-
-control_plane_port_rules = [
-  {
-    protocol  = "tcp"
-    from_port = 22
-    to_port   = 22
-    cidrs     = ["121.134.174.157/32"]
-  },
-  {
-    protocol  = "tcp"
-    from_port = 80
-    to_port   = 80
-    cidrs     = ["0.0.0.0/0"]
-  },
-  {
-    protocol  = "tcp"
-    from_port = 443
-    to_port   = 443
-    cidrs     = ["0.0.0.0/0"]
-  }
-]
-worker_key_pair_name    = "terraform-key"
-public_key_path         = "/home/ubuntu/.ssh/terraform-key.pub"
-ssh_allowed_cidr = ["121.134.174.157/32"]
+public_key_path      = "/home/ubuntu/.ssh/terraform-key.pub"
+worker_key_pair_name = "terraform-key"
+ssh_allowed_cidr     = ["121.134.174.157/32"]
 
 ingress_rules = [
   {
@@ -54,13 +32,11 @@ worker_nodes = {
     instance_name    = "worker-node-1"
     root_volume_size = 20
     root_volume_type = "gp3"
-    key_pair_name    = "terraform-key-worker-1"
   }
   "worker-2" = {
     instance_type    = "t3.small"
     instance_name    = "worker-node-2"
     root_volume_size = 30
     root_volume_type = "gp3"
-    key_pair_name    = "terraform-key-worker-2"
   }
 }

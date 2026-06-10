@@ -36,22 +36,7 @@ variable "ingress_rules" {
     cidr_blocks = list(string)
   }))
   description = "보안 그룹에 추가로 열어줄 인바운드 규칙 목록 (SSH 제외)"
-  default = [
-    {
-      description = "HTTP"
-      from_port   = 80
-      to_port     = 80
-      protocol    = "tcp"
-      cidr_blocks = ["0.0.0.0/0"]
-    },
-    {
-      description = "HTTPS"
-      from_port   = 443
-      to_port     = 443
-      protocol    = "tcp"
-      cidr_blocks = ["0.0.0.0/0"]
-    }
-  ]
+  default     = []
 }
 
 # VPC 생성 후 사용
@@ -72,13 +57,11 @@ variable "control_plane_key_pair_name" {
 variable "control_plane_instance_name" {
   type        = string
   description = "Lightsail 인스턴스 이름"
-  default     = "control-plane"
 }
 
 variable "control_plane_availability_zone" {
   type        = string
   description = "Lightsail 인스턴스 가용 영역 (예: ap-northeast-2a)"
-  default     = "ap-northeast-2a"
 }
 
 variable "control_plane_blueprint_id" {
@@ -107,5 +90,5 @@ variable "control_plane_port_rules" {
     cidrs     = list(string)
   }))
   description = "Lightsail 개방할 포트 규칙 목록"
-  default     = []
+  default = []
 }
