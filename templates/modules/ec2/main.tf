@@ -53,11 +53,6 @@ data "aws_ami" "amazon_linux_2023" {
   }
 }
 
-resource "aws_key_pair" "this" {
-  key_name   = var.key_pair_name
-  public_key = file(var.public_key_path)
-}
-
 resource "aws_security_group" "this" {
   name        = "${var.instance_name}-sg"
   description = "Allow SSH inbound traffic"
@@ -96,7 +91,7 @@ resource "aws_security_group" "this" {
 resource "aws_instance" "this" {
   ami                    = data.aws_ami.ubuntu_24.id
   instance_type          = var.instance_type
-  key_name               = aws_key_pair.this.key_name
+  key_name               = var.key_pair_name
   vpc_security_group_ids = [aws_security_group.this.id]
 
   root_block_device {

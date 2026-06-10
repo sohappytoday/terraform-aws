@@ -8,9 +8,13 @@ variable "worker_nodes" {
     instance_name    = string
     root_volume_size = number
     root_volume_type = string
-    key_pair_name    = string
   }))
   description = "worker-node 목록. 키는 노드 식별자, 값은 노드별 사양"
+}
+
+variable "worker_key_pair_name" {
+  type        = string
+  description = "모든 worker-node가 공유할 키 페어 이름"
 }
 
 variable "public_key_path" {

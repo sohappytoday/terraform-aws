@@ -11,6 +11,11 @@ module "control_plane" {
   port_rules        = var.lightsail_port_rules
 }
 
+resource "aws_key_pair" "worker_node" {
+  key_name   = var.worker_key_pair_name
+  public_key = file(var.public_key_path)
+}
+
 module "worker_node" {
   for_each = var.worker_nodes
   source   = "./modules/ec2"
@@ -19,8 +24,7 @@ module "worker_node" {
   instance_name    = each.value.instance_name
   root_volume_size = each.value.root_volume_size
   root_volume_type = each.value.root_volume_type
-  key_pair_name    = each.value.key_pair_name
-  public_key_path  = var.public_key_path
+  key_pair_name    = aws_key_pair.worker_node.key_name
   ssh_allowed_cidr = var.ssh_allowed_cidr
   ingress_rules    = var.ingress_rules
 }

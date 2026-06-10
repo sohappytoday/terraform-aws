@@ -27,11 +27,6 @@ variable "key_pair_name" {
   description = "AWS에 등록할 키 페어 이름"
 }
 
-variable "public_key_path" {
-  type        = string
-  description = "로컬에 저장된 SSH 공개키(.pub) 파일 경로"
-}
-
 variable "ssh_allowed_cidr" {
   type        = list(string)
   description = "SSH 접속을 허용할 CIDR 대역 목록"
