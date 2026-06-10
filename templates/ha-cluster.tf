@@ -1,4 +1,4 @@
-module "control_plane" {
+module "worker_node" {
   source = "./modules/ec2"
 
   instance_type    = var.instance_type

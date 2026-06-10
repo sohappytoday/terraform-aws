@@ -1,5 +1,5 @@
 instance_type    = "t3.micro"
-instance_name    = "control-plane"
+instance_name    = "worker-node"
 root_volume_size = 20
 root_volume_type = "gp3"
 key_pair_name    = "terraform-key"
