@@ -25,3 +25,4 @@ disable-model-invocation: true
 - 코드에 없는 내용을 추측해서 쓰지 않는다.
 - 변수 테이블은 실제 `variables.tf` 기준으로 정확히 반영한다.
 - 디렉토리 구조 tree는 실제 파일 기준으로 작성한다.
+- Claude, Claude Code, skills 생성 등 AI 도구와 관련된 내용은 절대 작성하지 않는다. README는 Terraform 인프라에 대한 문서다.
