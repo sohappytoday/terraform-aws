@@ -28,9 +28,9 @@ ingress_rules = [
 
 worker_nodes = {
   "worker-1" = {
-    instance_type    = "t3.micro"
+    instance_type    = "t3.small"
     instance_name    = "worker-node-1"
-    root_volume_size = 20
+    root_volume_size = 30
     root_volume_type = "gp3"
   }
   "worker-2" = {
