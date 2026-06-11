@@ -11,7 +11,7 @@ templates/
 ├── provider.tf            # AWS provider 설정
 ├── variables.tf           # 루트 변수 선언 (EC2 + Lightsail)
 ├── outputs.tf             # 최종 출력값
-├── ha-cluster.tf          # 모듈 호출 진입점
+├── main.tf          # 모듈 호출 진입점
 ├── control-plane.tfvars   # control-plane 변수 값 파일
 ├── worker-node.tfvars     # worker-node 변수 값 파일
 └── modules/
@@ -64,7 +64,7 @@ templates/
 | `control_plane_ip_address_type` | `dualstack` | IP 주소 유형 |
 | `control_plane_port_rules` | `[]` | 개방할 포트 규칙 목록 |
 
-### ha-cluster.tf
+### main.tf
 
 모듈을 호출하는 진입점. 어떤 모듈을 어떤 값으로 실행할지 선언한다.
 
@@ -150,12 +150,12 @@ Lightsail과 EC2는 기본적으로 서로 다른 네트워크에 위치한다. 
 3. control-plane.tfvars + worker-node.tfvars
    └─ variables.tf의 변수에 실제 값 주입
 
-4. ha-cluster.tf
+4. main.tf
    └─ module "control_plane" 발견 → modules/lightsail/ 로 이동
    └─ module "worker_node"   발견 → modules/ec2/       로 이동 (for_each)
 
 5. modules/lightsail/variables.tf
-   └─ ha-cluster.tf에서 넘긴 값 받음
+   └─ main.tf에서 넘긴 값 받음
 
 6. modules/lightsail/main.tf
    └─ aws_lightsail_instance 등 리소스 정의 읽음
@@ -164,7 +164,7 @@ Lightsail과 EC2는 기본적으로 서로 다른 네트워크에 위치한다. 
    └─ 모듈이 반환할 값 정의
 
 8. modules/ec2/variables.tf
-   └─ ha-cluster.tf에서 넘긴 값 받음
+   └─ main.tf에서 넘긴 값 받음
 
 9. modules/ec2/main.tf
    └─ aws_instance 등 리소스 정의 읽음
@@ -231,15 +231,15 @@ terraform init
 
 LightSail과 EC2를 조합해 control-plane과 worker-node를 구성했다. LightSail은 EC2와 별개의 네트워크에 존재하기 때문에 노드 간 통신은 public IP를 통해 이루어진다.
 
-Kubernetes의 kubelet, kube-proxy, API server 등 핵심 컴포넌트는 private IP를 기준으로 서로를 식별하고 통신한다. public IP로 통신하면 트래픽이 인터넷을 경유하게 되어 보안 노출이 생기고, 불필요한 데이터 전송 비용도 발생한다.
-
-LightSail은 AWS가 관리하는 별도의 내부 네트워크를 사용한다. EC2의 VPC와 연결하려면 VPC 피어링이 필요한데, LightSail이 피어링할 수 있는 대상은 default VPC로 제한된다. 따라서 커스텀 VPC를 사용하는 EC2 노드와는 private IP로 직접 통신할 수 없다.
-
 ---
 
 ## v2: EC2 전용 구성 + VPC (예정)
 
-v1의 한계를 해결하기 위해 control-plane을 LightSail에서 EC2로 전환한다. 모든 노드를 EC2로 통일하면 동일한 커스텀 VPC 안에 배치할 수 있어 private IP 통신이 가능해진다.
+Kubernetes의 kubelet, kube-proxy, API server 등 핵심 컴포넌트는 private IP를 기준으로 서로를 식별하고 통신한다. v1에서 public IP로 통신하면 트래픽이 인터넷을 경유하게 되어 보안 노출이 생기고, 불필요한 데이터 전송 비용도 발생한다.
+
+LightSail은 AWS가 관리하는 별도의 내부 네트워크를 사용한다. EC2의 VPC와 연결하려면 VPC 피어링이 필요한데, LightSail이 피어링할 수 있는 대상은 default VPC로 제한된다. 따라서 커스텀 VPC를 사용하는 EC2 노드와는 private IP로 직접 통신할 수 없다.
+
+이를 해결하기 위해 control-plane을 LightSail에서 EC2로 전환한다. 모든 노드를 EC2로 통일하면 동일한 커스텀 VPC 안에 배치할 수 있어 private IP 통신이 가능해진다.
 
 default VPC를 사용하지 않고 커스텀 VPC를 직접 생성하는 이유는 다음과 같다.
 
