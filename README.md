@@ -215,3 +215,24 @@ terraform destroy \
 ```shell
 terraform init
 ```
+
+---
+
+## 버전 이력
+
+| 버전 | 구성 | 네트워크 | 목적 |
+|---|---|---|---|
+| v1 | LightSail(control-plane) + EC2(worker-node) | Public IP 통신 | 기본 클러스터 프로비저닝 실습 |
+| v2 | EC2(control-plane) + EC2(worker-node) | VPC 기반 private 통신 | VPC 구성 및 control-plane EC2 전환 |
+
+---
+
+## v1: LightSail + EC2 조합
+
+LightSail과 EC2를 조합해 control-plane과 worker-node를 구성했다. LightSail은 EC2와 별개의 네트워크에 존재하기 때문에 노드 간 통신은 public IP를 통해 이루어진다.
+
+---
+
+## v2: EC2 전용 구성 + VPC (예정)
+
+LightSail은 AWS VPC에 속하지 않아 worker-node(EC2)와 private IP로 통신할 수 없다. v2에서는 control-plane을 EC2로 전환하고, VPC와 서브넷을 직접 생성해 모든 노드를 동일 네트워크 안에 배치한다.
