@@ -1,14 +1,13 @@
 module "control_plane" {
-  source = "./modules/lightsail"
+  source = "./modules/ec2"
 
-  instance_name     = var.control_plane_instance_name
-  availability_zone = var.control_plane_availability_zone
-  blueprint_id      = var.control_plane_blueprint_id
-  bundle_id         = var.control_plane_bundle_id
-  key_pair_name     = var.control_plane_key_pair_name
-  public_key_path   = var.public_key_path
-  ip_address_type   = var.control_plane_ip_address_type
-  port_rules        = var.control_plane_port_rules
+  instance_type    = var.control_plane_instance_type
+  instance_name    = var.control_plane_instance_name
+  root_volume_size = var.control_plane_root_volume_size
+  root_volume_type = var.control_plane_root_volume_type
+  key_pair_name    = aws_key_pair.worker_node.key_name
+  ssh_allowed_cidr = var.control_plane_ssh_allowed_cidr
+  ingress_rules    = var.control_plane_ingress_rules
 }
 
 resource "aws_key_pair" "worker_node" {

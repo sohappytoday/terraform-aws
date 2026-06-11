@@ -46,49 +46,45 @@ variable "ingress_rules" {
 # }
 
 # -----------------------------------------------
-# Lightsail (control-plane)
+# EC2 (control-plane)
 # -----------------------------------------------
-
-variable "control_plane_key_pair_name" {
-  type        = string
-  description = "Lightsail에 등록할 키 페어 이름"
-}
 
 variable "control_plane_instance_name" {
   type        = string
-  description = "Lightsail 인스턴스 이름"
+  description = "control-plane EC2 인스턴스 이름"
 }
 
-variable "control_plane_availability_zone" {
+variable "control_plane_instance_type" {
   type        = string
-  description = "Lightsail 인스턴스 가용 영역 (예: ap-northeast-2a)"
+  description = "control-plane EC2 인스턴스 타입"
+  default     = "t3.medium"
 }
 
-variable "control_plane_blueprint_id" {
+variable "control_plane_root_volume_size" {
+  type        = number
+  description = "control-plane 루트 볼륨 크기 (GB)"
+  default     = 30
+}
+
+variable "control_plane_root_volume_type" {
   type        = string
-  description = "OS 이미지 ID (예: ubuntu_22_04)"
-  default     = "ubuntu_22_04"
+  description = "control-plane 루트 볼륨 타입"
+  default     = "gp3"
 }
 
-variable "control_plane_bundle_id" {
-  type        = string
-  description = "인스턴스 사양 번들 ID (예: small_3_0 = 2GB RAM, 1vCPU)"
-  default     = "small_3_0"
+variable "control_plane_ssh_allowed_cidr" {
+  type        = list(string)
+  description = "control-plane SSH 허용 CIDR 목록"
 }
 
-variable "control_plane_ip_address_type" {
-  type        = string
-  description = "IP 주소 유형 (dualstack, ipv4, ipv6)"
-  default     = "dualstack"
-}
-
-variable "control_plane_port_rules" {
+variable "control_plane_ingress_rules" {
   type = list(object({
-    protocol  = string
-    from_port = number
-    to_port   = number
-    cidrs     = list(string)
+    description = string
+    from_port   = number
+    to_port     = number
+    protocol    = string
+    cidr_blocks = list(string)
   }))
-  description = "Lightsail 개방할 포트 규칙 목록"
-  default = []
+  description = "control-plane 추가 인바운드 규칙 목록 (SSH 제외)"
+  default     = []
 }
