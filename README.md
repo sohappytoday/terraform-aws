@@ -1,6 +1,11 @@
- ## Kubernetes HA 클러스터 인프라 구성
+## Kubernetes HA 클러스터 인프라 구성
 
-Lightsail(control-plane) + EC2(worker-node) 조합으로 Kubernetes 클러스터를 프로비저닝한다.
+EC2(control-plane) + EC2(worker-node) 조합으로 Kubernetes 클러스터를 프로비저닝한다.
+
+### 버전 인덱스
+
+- [v1: LightSail + EC2 조합 — 클러스터 구축을 위한 인스턴스 생성](#v1-lightsail--ec2-조합)
+- [v2: EC2 전용 구성 + VPC](#v2-ec2-전용-구성--vpc)
 
 ---
 
@@ -52,24 +57,23 @@ templates/
 | `ssh_allowed_cidr` | 없음 | SSH 허용 CIDR 목록 |
 | `ingress_rules` | `[]` | 추가 인바운드 규칙 목록 (SSH 제외) |
 
-**Lightsail (control-plane) 변수**
+**EC2 (control-plane) 변수**
 
 | 변수 | 기본값 | 설명 |
 |---|---|---|
-| `control_plane_key_pair_name` | 없음 | Lightsail 키 페어 이름 |
 | `control_plane_instance_name` | 없음 | 인스턴스 이름 |
-| `control_plane_availability_zone` | 없음 | 가용 영역 |
-| `control_plane_blueprint_id` | `ubuntu_22_04` | OS 이미지 ID |
-| `control_plane_bundle_id` | `small_3_0` | 사양 번들 (2GB RAM, 1vCPU) |
-| `control_plane_ip_address_type` | `dualstack` | IP 주소 유형 |
-| `control_plane_port_rules` | `[]` | 개방할 포트 규칙 목록 |
+| `control_plane_instance_type` | `t3.medium` | EC2 인스턴스 타입 |
+| `control_plane_root_volume_size` | `30` | 루트 볼륨 크기 (GB) |
+| `control_plane_root_volume_type` | `gp3` | 루트 볼륨 타입 |
+| `control_plane_ssh_allowed_cidr` | 없음 | SSH 허용 CIDR 목록 |
+| `control_plane_ingress_rules` | `[]` | 추가 인바운드 규칙 목록 (SSH 제외) |
 
 ### main.tf
 
 모듈을 호출하는 진입점. 어떤 모듈을 어떤 값으로 실행할지 선언한다.
 
-- `module "control_plane"` — `modules/lightsail` 모듈 호출
-- `aws_key_pair "worker_node"` — 모든 worker-node가 공유할 키 페어를 루트에서 한 번만 생성
+- `module "control_plane"` — `modules/ec2` 모듈 호출 (control-plane 단일 인스턴스)
+- `aws_key_pair "worker_node"` — control-plane과 worker-node가 공유할 키 페어를 루트에서 한 번만 생성
 - `module "worker_node"` — `modules/ec2` 모듈을 `for_each`로 반복 호출 (`worker_nodes` map 크기만큼)
 
 `aws_key_pair`를 모듈 밖에 선언하는 이유는 `for_each`로 인해 모듈이 여러 번 실행되더라도 키 페어는 한 번만 생성하기 위해서다.
@@ -86,10 +90,10 @@ templates/
 
 ### control-plane.tfvars
 
-control-plane(Lightsail) 관련 변수 값을 정의한다.
+control-plane(EC2) 관련 변수 값을 정의한다.
 
-- 키 페어 이름, 인스턴스 이름, 가용 영역
-- 포트 규칙 (SSH는 특정 IP만 허용, HTTP/HTTPS는 전체 오픈)
+- 인스턴스 이름, 타입, 볼륨 사양
+- SSH 허용 CIDR, 추가 인바운드 규칙 (HTTP/HTTPS)
 
 ### worker-node.tfvars
 
@@ -101,7 +105,7 @@ worker-node(EC2) 관련 변수 값을 정의한다.
 
 ### modules/ec2/
 
-**worker-node** EC2 인스턴스를 생성하는 모듈.
+**control-plane 및 worker-node** EC2 인스턴스를 생성하는 공용 모듈.
 
 - `main.tf` — AMI data source 4종(Ubuntu 22/24, Rocky 9, Amazon Linux 2023), `aws_security_group`, `aws_instance` 리소스 정의
 - `variables.tf` — 모듈 내부 변수 선언 (루트에서 넘긴 값을 받는 창구)
@@ -111,13 +115,11 @@ worker-node(EC2) 관련 변수 값을 정의한다.
 
 ### modules/lightsail/
 
-**control-plane** Lightsail 인스턴스를 생성하는 모듈.
+v1에서 **control-plane**으로 사용한 Lightsail 모듈. v2부터는 사용하지 않는다.
 
 - `main.tf` — `aws_lightsail_key_pair`, `aws_lightsail_instance`, `aws_lightsail_instance_public_ports` 리소스 정의
 - `variables.tf` — 모듈 내부 변수 선언
 - `outputs.tf` — `instance_id`, `public_ip`, `private_ip` 반환
-
-EC2의 `aws_security_group` 대신 `aws_lightsail_instance_public_ports`로 포트를 관리한다. `dynamic "port_info"`로 규칙 목록을 순회한다.
 
 ---
 
@@ -151,25 +153,25 @@ Lightsail과 EC2는 기본적으로 서로 다른 네트워크에 위치한다. 
    └─ variables.tf의 변수에 실제 값 주입
 
 4. main.tf
-   └─ module "control_plane" 발견 → modules/lightsail/ 로 이동
-   └─ module "worker_node"   발견 → modules/ec2/       로 이동 (for_each)
+   └─ module "control_plane" 발견 → modules/ec2/ 로 이동
+   └─ module "worker_node"   발견 → modules/ec2/ 로 이동 (for_each)
 
-5. modules/lightsail/variables.tf
+5. modules/ec2/variables.tf (control_plane)
    └─ main.tf에서 넘긴 값 받음
 
-6. modules/lightsail/main.tf
-   └─ aws_lightsail_instance 등 리소스 정의 읽음
-
-7. modules/lightsail/outputs.tf
-   └─ 모듈이 반환할 값 정의
-
-8. modules/ec2/variables.tf
-   └─ main.tf에서 넘긴 값 받음
-
-9. modules/ec2/main.tf
+6. modules/ec2/main.tf (control_plane)
    └─ aws_instance 등 리소스 정의 읽음
 
-10. modules/ec2/outputs.tf
+7. modules/ec2/outputs.tf (control_plane)
+   └─ 모듈이 반환할 값 정의
+
+8. modules/ec2/variables.tf (worker_node)
+   └─ main.tf에서 넘긴 값 받음
+
+9. modules/ec2/main.tf (worker_node)
+   └─ aws_instance 등 리소스 정의 읽음
+
+10. modules/ec2/outputs.tf (worker_node)
     └─ 모듈이 반환할 값 정의
 
 11. outputs.tf
@@ -233,7 +235,7 @@ LightSail과 EC2를 조합해 control-plane과 worker-node를 구성했다. Ligh
 
 ---
 
-## v2: EC2 전용 구성 + VPC (예정)
+## v2: EC2 전용 구성 + VPC
 
 Kubernetes의 kubelet, kube-proxy, API server 등 핵심 컴포넌트는 private IP를 기준으로 서로를 식별하고 통신한다. v1에서 public IP로 통신하면 트래픽이 인터넷을 경유하게 되어 보안 노출이 생기고, 불필요한 데이터 전송 비용도 발생한다.
 
@@ -246,3 +248,14 @@ default VPC를 사용하지 않고 커스텀 VPC를 직접 생성하는 이유�
 - default VPC는 AWS 계정 생성 시 자동으로 만들어지며 CIDR(`172.31.0.0/16`)과 서브넷 구성이 고정되어 있어 변경하기 어렵다.
 - 커스텀 VPC를 사용하면 IP 대역, 서브넷 분리, 라우팅 테이블을 처음부터 직접 설계할 수 있다.
 - Kubernetes 클러스터에 맞는 네트워크 구조(control-plane / worker-node 서브넷 분리 등)를 갖추려면 커스텀 VPC가 필요하다.
+
+### 인스턴스 사양 선택
+
+실제 파드는 worker-node에서 실행되므로, worker-node의 CPU·메모리가 클러스터 성능을 결정한다. control-plane은 Kubernetes 컴포넌트만 돌리고 직접 워크로드를 받지 않기 때문에 worker-node보다 낮은 사양으로도 충분하다.
+
+이상적으로는 worker-node를 `t3.medium` 이상으로 잡는 것이 좋지만, 비용 문제로 control-plane(`t3.small`) 포함 전 노드를 `t3.small`로 통일했다. 스토리지는 가격이 저렴해 worker-node는 30GiB, control-plane은 20GiB로 차등 적용했다.
+
+| 노드 | 타입 | 스토리지 |
+|---|---|---|
+| control-plane | t3.small | 20GiB gp3 |
+| worker-node × 2 | t3.small | 30GiB gp3 |
