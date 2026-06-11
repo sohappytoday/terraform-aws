@@ -92,7 +92,22 @@ EOF
 git push
 ```
 
-### Step 5: 결과 확인
+### Step 5: main 브랜치 동기화
+
+현재 브랜치가 `v1`, `v2`, `v3` 등 버전 브랜치이면 push 후 main도 동일 커밋으로 업데이트한다.
+
+```bash
+CURRENT=$(git branch --show-current)
+git checkout main
+git merge --ff-only "$CURRENT"
+git push origin main
+git checkout "$CURRENT"
+```
+
+- `--ff-only` — fast-forward가 불가능하면 중단한다. 강제 merge하지 않는다.
+- 버전 브랜치가 아닌 경우(예: `feature/xxx`)에는 이 단계를 건너뛴다.
+
+### Step 6: 결과 확인
 
 ```bash
 git log --oneline -3
