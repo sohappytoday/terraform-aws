@@ -2,7 +2,6 @@
 name: update-readme
 description: 지금까지 작업한 내용을 기반으로 README.md를 최신 상태로 업데이트한다. 디렉토리 구조, 변수 목록, 파일 설명 등이 실제 코드와 달라졌을 때 사용한다.
 disable-model-invocation: true
-allowed-tools: Read Bash
 ---
 
 ## 동적 컨텍스트

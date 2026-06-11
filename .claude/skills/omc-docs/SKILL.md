@@ -3,7 +3,6 @@ name: omc-docs
 description: oh-my-claudecode 공식 GitHub 레포 내용만 참고해서 질문에 답한다. omc 사용법, 스킬 작성법, 설정 방법을 물을 때 사용한다.
 argument-hint: <질문 또는 주제>
 disable-model-invocation: true
-allowed-tools: WebSearch WebFetch
 ---
 
 # OMC Docs
