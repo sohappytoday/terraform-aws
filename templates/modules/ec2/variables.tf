@@ -29,16 +29,18 @@ variable "key_pair_name" {
 
 variable "ssh_allowed_cidr" {
   type        = list(string)
-  description = "SSH 접속을 허용할 CIDR 대역 목록"
+  description = "SSH 접속을 허용할 CIDR 대역 목록. 비어있으면 SSH 규칙을 생성하지 않음"
+  default     = []
 }
 
 variable "ingress_rules" {
   type = list(object({
-    description = string
-    from_port   = number
-    to_port     = number
-    protocol    = string
-    cidr_blocks = list(string)
+    description     = string
+    from_port       = number
+    to_port         = number
+    protocol        = string
+    cidr_blocks     = optional(list(string), [])
+    security_groups = optional(list(string), [])
   }))
   description = "추가 인바운드 규칙 목록"
   default     = []

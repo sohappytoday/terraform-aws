@@ -17,3 +17,8 @@ output "ami_id" {
   value       = aws_instance.this.ami
   description = "EC2 인스턴스 AMI"
 }
+
+output "security_group_id" {
+  value       = aws_security_group.this.id
+  description = "EC2 인스턴스에 연결된 Security Group ID"
+}
