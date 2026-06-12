@@ -36,8 +36,15 @@ module "worker_node" {
   root_volume_size = each.value.root_volume_size
   root_volume_type = each.value.root_volume_type
   key_pair_name    = aws_key_pair.worker_node.key_name
-  ssh_allowed_cidr = var.ssh_allowed_cidr
-  ingress_rules    = var.ingress_rules
   vpc_id           = module.vpc.vpc_id
   subnet_id        = module.vpc.private_subnet_id
+  ingress_rules = [
+    {
+      description     = "Control Plane"
+      from_port       = 0
+      to_port         = 0
+      protocol        = "-1"
+      security_groups = [module.control_plane.security_group_id]
+    }
+  ]
 }

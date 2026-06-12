@@ -56,23 +56,6 @@ variable "public_key_path" {
   description = "로컬에 저장된 SSH 공개키(.pub) 파일 경로"
 }
 
-variable "ssh_allowed_cidr" {
-  type        = list(string)
-  description = "SSH(22번 포트) 접속을 허용할 CIDR 대역 목록"
-}
-
-variable "ingress_rules" {
-  type = list(object({
-    description = string
-    from_port   = number
-    to_port     = number
-    protocol    = string
-    cidr_blocks = list(string)
-  }))
-  description = "보안 그룹에 추가로 열어줄 인바운드 규칙 목록 (SSH 제외)"
-  default     = []
-}
-
 # -----------------------------------------------
 # EC2 (control-plane)
 # -----------------------------------------------

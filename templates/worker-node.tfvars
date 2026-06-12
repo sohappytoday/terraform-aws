@@ -1,30 +1,5 @@
 public_key_path      = "/home/ubuntu/.ssh/terraform-key.pub"
 worker_key_pair_name = "terraform-key"
-ssh_allowed_cidr     = ["121.134.174.157/32"]
-
-ingress_rules = [
-  {
-    description = "HTTP"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  },
-  {
-    description = "HTTPS"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  },
-  {
-    description = "Custom 8080"
-    from_port   = 8080
-    to_port     = 8080
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-]
 
 worker_nodes = {
   "worker-1" = {
