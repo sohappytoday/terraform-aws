@@ -267,8 +267,6 @@ control-plane은 SSH로 직접 접근해 클러스터를 관리해야 하기 때
 | 방향 | 포트 | 출처 | 설명 |
 |---|---|---|---|
 | Inbound | 22 (SSH) | 내 IP | 외부 접근은 SSH만 허용 |
-| Inbound | 80 (HTTP) | `0.0.0.0/0` | 실험용 HTTP 요청 수신 |
-| Inbound | 443 (HTTPS) | `0.0.0.0/0` | 실험용 HTTPS 요청 수신 |
 | Outbound | 전체 | `0.0.0.0/0` | 패키지 설치·이미지 pull 등 인터넷 접근 필요 |
 
 **Worker Node SG (Private Subnet)**
