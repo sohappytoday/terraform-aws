@@ -6,6 +6,7 @@ EC2(control-plane) + EC2(worker-node) 조합으로 Kubernetes 클러스터를 �
 
 - [v1: LightSail + EC2 조합 — 클러스터 구축을 위한 인스턴스 생성](#v1-lightsail--ec2-조합)
 - [v2: EC2 전용 구성 + VPC](#v2-ec2-전용-구성--vpc)
+- [v3: Reverse Proxy 기반 보안 강화 (예정)](#v3-reverse-proxy-기반-보안-강화-예정)
 
 ---
 
@@ -15,6 +16,7 @@ EC2(control-plane) + EC2(worker-node) 조합으로 Kubernetes 클러스터를 �
 |---|---|---|---|
 | v1 | LightSail(control-plane) + EC2(worker-node) | Public IP 통신 | 기본 클러스터 프로비저닝 실습 |
 | v2 | EC2(control-plane) + EC2(worker-node) | VPC 기반 private 통신 | VPC 구성 및 control-plane EC2 전환 |
+| v3 | EC2(reverse-proxy, public) + EC2(control-plane + worker-node, private) | Public/Private Subnet 분리, SSM 내부망 접근 | Reverse Proxy 도입 및 control-plane 폐쇄망 구성 |
 
 ---
 
@@ -249,3 +251,113 @@ default VPC를 사용하지 않고 커스텀 VPC를 직접 생성하는 이유�
 |---|---|---|
 | control-plane | t3.small | 20GiB gp3 |
 | worker-node × 2 | t3.small | 30GiB gp3 |
+
+---
+
+## v3: Reverse Proxy 기반 보안 강화 (예정)
+
+v2의 control-plane은 Public IP를 가지고 있어 보안 그룹으로 접근을 제한하더라도 인터넷에 노출된 상태다. 보안 그룹이 방어막 역할을 하지만, 서버 자체가 공인 IP를 가진다는 것은 외부에서 직접 도달 가능한 경로가 존재한다는 의미다. 외부에서 직접 접근 가능한 서버를 Reverse Proxy 하나로 최소화하고, 나머지 노드는 모두 Private Subnet에 격리해 이 문제를 해결한다.
+
+### 목표
+
+- 외부에서 직접 접근 가능한 서버는 Reverse Proxy 역할의 EC2 하나만 둔다.
+- control-plane과 worker-node는 모두 Private Subnet에 배치하고 Public IP를 할당하지 않는다.
+- 외부 트래픽은 반드시 Reverse Proxy를 거쳐서만 Private EC2로 전달된다.
+- control-plane 접근(kubectl)은 SSM Session Manager + VPC Endpoint로 인터넷 경로 없이 처리한다.
+
+### 네트워크 구조
+
+```
+[개발자]
+   ↓ SSM (VPC Endpoint, AWS 내부망)
+[Control Plane EC2, Private Subnet]
+
+[Internet]
+   ↓ 80/443
+[Reverse Proxy EC2 (Nginx), Public Subnet]
+   ↓ Private IP
+[Worker Node EC2, Private Subnet]
+```
+
+### 트래픽 흐름
+
+**사용자 트래픽 (서비스 접근)**
+
+```
+외부 사용자
+   │
+   │ HTTP/HTTPS (80/443)
+   ▼
+Reverse Proxy EC2        ← Public Subnet, Public IP 보유
+   │
+   │ HTTP (8080, Private IP)
+   ▼
+Worker Node EC2          ← Private Subnet, Public IP 없음
+   │
+   │
+   ▼
+App Pod (컨테이너)
+```
+
+**관리자 트래픽 (kubectl 접근)**
+
+```
+개발자 PC
+   │
+   │ HTTPS (443, AWS 내부망)
+   ▼
+VPC Interface Endpoint   ← 인터넷 경유 없음
+   │
+   │
+   ▼
+Control Plane EC2        ← Private Subnet, Public IP 없음, 인바운드 포트 없음
+   │
+   │ 포트 포워딩 (6443)
+   ▼
+kubectl (로컬에서 localhost:6443으로 접근)
+```
+
+### Security Group 구성
+
+**Reverse Proxy SG (Public Subnet)**
+
+| 방향 | 포트 | 출처/대상 | 설명 |
+|---|---|---|---|
+| Inbound | 80 | 0.0.0.0/0 | HTTP |
+| Inbound | 443 | 0.0.0.0/0 | HTTPS |
+| Outbound | 8080 | Worker Node SG | Worker Node로만 포워딩 |
+
+**Worker Node SG (Private Subnet)**
+
+| 방향 | 포트 | 출처/대상 | 설명 |
+|---|---|---|---|
+| Inbound | 8080 | Reverse Proxy SG | Reverse Proxy에서 오는 트래픽만 허용 |
+| Outbound | 443 | 0.0.0.0/0 | 컨테이너 이미지 pull 등 외부 통신 |
+
+**Control Plane SG (Private Subnet)**
+
+| 방향 | 포트 | 출처/대상 | 설명 |
+|---|---|---|---|
+| Inbound | 없음 | — | 인바운드 완전 차단 |
+| Outbound | 443 | VPC Endpoint SG | SSM 통신 (AWS 내부망) |
+
+### kubectl 접근 (SSM Session Manager + VPC Endpoint)
+
+control-plane에 Public IP와 인바운드 포트를 열지 않고 SSM Session Manager로 접근한다. SSM Agent가 VPC Interface Endpoint를 통해 AWS 내부망으로만 통신하기 때문에 인터넷 경로가 필요 없다.
+
+필요한 VPC Interface Endpoint 3개:
+
+| Endpoint | 용도 |
+|---|---|
+| `com.amazonaws.region.ssm` | SSM 기본 연결 |
+| `com.amazonaws.region.ssmmessages` | Session Manager 터널 |
+| `com.amazonaws.region.ec2messages` | EC2 ↔ SSM 메시지 |
+
+로컬에서 kubectl 사용 시 포트 포워딩:
+
+```bash
+aws ssm start-session \
+  --target i-xxxxxxxxx \
+  --document-name AWS-StartPortForwardingSession \
+  --parameters '{"portNumber":["6443"],"localPortNumber":["6443"]}'
+```
