@@ -43,3 +43,13 @@ variable "ingress_rules" {
   description = "추가 인바운드 규칙 목록"
   default     = []
 }
+
+variable "vpc_id" {
+  type        = string
+  description = "보안 그룹을 생성할 VPC ID"
+}
+
+variable "subnet_id" {
+  type        = string
+  description = "EC2 인스턴스를 배치할 서브넷 ID"
+}

@@ -56,6 +56,7 @@ data "aws_ami" "amazon_linux_2023" {
 resource "aws_security_group" "this" {
   name        = "${var.instance_name}-sg"
   description = "Allow SSH inbound traffic"
+  vpc_id      = var.vpc_id
 
   ingress {
     description = "SSH"
@@ -92,6 +93,7 @@ resource "aws_instance" "this" {
   ami                    = data.aws_ami.ubuntu_24.id
   instance_type          = var.instance_type
   key_name               = var.key_pair_name
+  subnet_id              = var.subnet_id
   vpc_security_group_ids = [aws_security_group.this.id]
 
   root_block_device {
