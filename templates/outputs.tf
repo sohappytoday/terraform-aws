@@ -1,3 +1,18 @@
+output "vpc_id" {
+  value       = module.vpc.vpc_id
+  description = "VPC ID"
+}
+
+output "public_subnet_id" {
+  value       = module.vpc.public_subnet_id
+  description = "퍼블릭 서브넷 ID (control-plane)"
+}
+
+output "private_subnet_id" {
+  value       = module.vpc.private_subnet_id
+  description = "프라이빗 서브넷 ID (worker-node)"
+}
+
 output "worker_node_instance_ids" {
   value       = { for k, v in module.worker_node : k => v.instance_id }
   description = "worker-node별 EC2 인스턴스 ID"

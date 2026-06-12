@@ -1,3 +1,13 @@
+module "vpc" {
+  source = "./modules/vpc"
+
+  name                = var.cluster_name
+  vpc_cidr            = var.vpc_cidr
+  public_subnet_cidr  = var.public_subnet_cidr
+  private_subnet_cidr = var.private_subnet_cidr
+  availability_zone   = var.availability_zone
+}
+
 module "control_plane" {
   source = "./modules/ec2"
 
@@ -8,6 +18,8 @@ module "control_plane" {
   key_pair_name    = aws_key_pair.worker_node.key_name
   ssh_allowed_cidr = var.control_plane_ssh_allowed_cidr
   ingress_rules    = var.control_plane_ingress_rules
+  vpc_id           = module.vpc.vpc_id
+  subnet_id        = module.vpc.public_subnet_id
 }
 
 resource "aws_key_pair" "worker_node" {
@@ -26,4 +38,6 @@ module "worker_node" {
   key_pair_name    = aws_key_pair.worker_node.key_name
   ssh_allowed_cidr = var.ssh_allowed_cidr
   ingress_rules    = var.ingress_rules
+  vpc_id           = module.vpc.vpc_id
+  subnet_id        = module.vpc.private_subnet_id
 }
