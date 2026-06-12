@@ -292,6 +292,25 @@ v2의 control-plane은 Public IP를 가지고 있어 보안 그룹으로 접근�
 - control-plane과 worker-node는 모두 Private Subnet에 배치하고 Public IP를 할당하지 않는다.
 - 외부 트래픽은 반드시 Reverse Proxy를 거쳐서만 Private EC2로 전달된다.
 - control-plane 접근(kubectl)은 SSM Session Manager + VPC Endpoint로 인터넷 경로 없이 처리한다.
+- Network ACL(NACL)을 도입해 Security Group과 함께 이중 방어선을 구성한다.
+
+### NACL 도입 계획
+
+v2는 Security Group만으로 트래픽을 제어한다. Security Group은 EC2 인스턴스 단위로 동작하는 stateful 방화벽으로, 인스턴스에 도달하기 전 단계에는 개입하지 않는다.
+
+v3에서는 서브넷 레벨에서 동작하는 NACL을 추가해 이중 방어선을 구성한다.
+
+```
+외부 트래픽
+    ↓
+NACL (서브넷 레벨, stateless, 1차 필터)
+    ↓
+Security Group (인스턴스 레벨, stateful, 2차 필터)
+    ↓
+EC2
+```
+
+NACL은 stateless이기 때문에 인바운드와 아웃바운드 규칙을 각각 명시해야 한다. 서브넷 전체에 적용되므로 Security Group보다 상위 레이어에서 불필요한 트래픽을 차단할 수 있다.
 
 ### 네트워크 구조
 
