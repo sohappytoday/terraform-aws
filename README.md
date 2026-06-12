@@ -241,6 +241,14 @@ default VPC를 사용하지 않고 커스텀 VPC를 직접 생성하는 이유�
 - 커스텀 VPC를 사용하면 IP 대역, 서브넷 분리, 라우팅 테이블을 처음부터 직접 설계할 수 있다.
 - Kubernetes 클러스터에 맞는 네트워크 구조(control-plane / worker-node 서브넷 분리 등)를 갖추려면 커스텀 VPC가 필요하다.
 
+### 서브넷 구성
+
+control-plane은 Public Subnet에, worker-node는 Private Subnet에 배치한다.
+
+worker-node는 실제 애플리케이션 파드를 실행하는 노드로, 외부에서 직접 접근할 이유가 없다. Private Subnet에 배치하면 Public IP 없이 VPC 내부에서만 통신하므로 불필요한 외부 노출을 줄일 수 있다.
+
+control-plane은 SSH로 직접 접근해 클러스터를 관리해야 하기 때문에 Public IP가 필요하다. Public Subnet에 배치하고 SSH(22번 포트)를 내 IP에서만 허용하는 방식으로 외부 접근을 최소화한다. v3에서는 control-plane도 Private Subnet으로 이동하고 SSM Session Manager로 접근 방식을 전환할 예정이다.
+
 ### 인스턴스 사양 선택
 
 실제 파드는 worker-node에서 실행되므로, worker-node의 CPU·메모리가 클러스터 성능을 결정한다. control-plane은 Kubernetes 컴포넌트만 돌리고 직접 워크로드를 받지 않기 때문에 worker-node보다 낮은 사양으로도 충분하다.
@@ -251,6 +259,28 @@ default VPC를 사용하지 않고 커스텀 VPC를 직접 생성하는 이유�
 |---|---|---|
 | control-plane | t3.small | 20GiB gp3 |
 | worker-node × 2 | t3.small | 30GiB gp3 |
+
+### Security Group 구성
+
+**Control Plane SG (Public Subnet)**
+
+| 방향 | 포트 | 출처 | 설명 |
+|---|---|---|---|
+| Inbound | 22 (SSH) | 내 IP | 외부 접근은 SSH만 허용 |
+| Inbound | 80 (HTTP) | `0.0.0.0/0` | 실험용 HTTP 요청 수신 |
+| Inbound | 443 (HTTPS) | `0.0.0.0/0` | 실험용 HTTPS 요청 수신 |
+| Outbound | 전체 | `0.0.0.0/0` | 패키지 설치·이미지 pull 등 인터넷 접근 필요 |
+
+**Worker Node SG (Private Subnet)**
+
+| 방향 | 포트 | 출처 | 설명 |
+|---|---|---|---|
+| Inbound | 전체 | Control Plane SG | Control Plane에서 오는 트래픽만 허용 |
+| Outbound | 전체 | `0.0.0.0/0` | 패키지 설치·이미지 pull 등 인터넷 접근 필요 |
+
+Outbound를 `0.0.0.0/0`으로 열어둔 이유는 실습 단계에서 kubeadm, kubectl, 컨테이너 이미지 등을 노드 안에서 직접 설치·pull해야 하기 때문이다. Outbound를 Worker Node SG로만 제한하면 인터넷 접근이 막혀 패키지를 사전에 준비해야 하므로, 실습 편의를 위해 전체 허용을 유지한다.
+
+Worker Node는 Private Subnet에 배치되어 Public IP가 없으므로, Outbound를 열어도 외부에서 Worker Node로 직접 들어오는 경로는 존재하지 않는다.
 
 ---
 
