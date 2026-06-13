@@ -99,6 +99,7 @@ resource "aws_instance" "this" {
   key_name               = var.key_pair_name
   subnet_id              = var.subnet_id
   vpc_security_group_ids = [aws_security_group.this.id]
+  user_data              = var.user_data
 
   root_block_device {
     volume_size = var.root_volume_size

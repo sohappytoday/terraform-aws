@@ -55,3 +55,9 @@ variable "subnet_id" {
   type        = string
   description = "EC2 인스턴스를 배치할 서브넷 ID"
 }
+
+variable "user_data" {
+  type        = string
+  description = "인스턴스 초기화 스크립트"
+  default     = ""
+}

@@ -20,6 +20,10 @@ module "control_plane" {
   ingress_rules    = var.control_plane_ingress_rules
   vpc_id           = module.vpc.vpc_id
   subnet_id        = module.vpc.public_subnet_id
+  user_data        = <<-EOF
+    #!/bin/bash
+    hostnamectl set-hostname master-1
+  EOF
 }
 
 resource "aws_key_pair" "worker_node" {
@@ -47,4 +51,8 @@ module "worker_node" {
       security_groups = [module.control_plane.security_group_id]
     }
   ]
+  user_data = <<-EOF
+    #!/bin/bash
+    hostnamectl set-hostname ${each.key}
+  EOF
 }
