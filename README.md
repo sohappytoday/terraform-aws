@@ -282,6 +282,41 @@ Outbound를 `0.0.0.0/0`으로 열어둔 이유는 이 프로젝트에서 kubeadm
 
 Worker Node는 Private Subnet에 배치되어 Public IP가 없으므로, Outbound를 열어도 외부에서 Worker Node로 직접 들어오는 경로는 존재하지 않는다.
 
+### Hostname 설정
+
+`user_data`로 인스턴스 생성 시 hostname을 자동으로 설정한다.
+
+| 노드 | hostname |
+|---|---|
+| control-plane | master-1 |
+| worker-node-1 | worker-1 |
+| worker-node-2 | worker-2 |
+
+### SSH 접근 방법
+
+worker-node는 Private Subnet에 배치되어 Public IP가 없다. 외부에서 직접 접속할 수 없으며, control-plane을 경유(bastion)해야 한다. SSH Agent Forwarding을 사용하면 키 파일을 control-plane에 복사하지 않고도 worker-node에 접속할 수 있다.
+
+**1. 로컬에서 ssh-agent 실행 및 키 등록**
+
+```bash
+eval $(ssh-agent -s)
+ssh-add ~/.ssh/terraform-key
+```
+
+**2. control-plane에 Agent Forwarding으로 접속**
+
+```bash
+ssh -A ubuntu@<control-plane-public-ip>
+```
+
+`-A` 옵션이 Agent Forwarding을 활성화한다. 로컬의 키가 control-plane을 통해 worker-node 인증에 사용되므로 키 파일을 서버에 올릴 필요가 없다.
+
+**3. control-plane에서 worker-node 접속**
+
+```bash
+ssh ubuntu@<worker-node-private-ip>
+```
+
 ---
 
 ## v3: Reverse Proxy 기반 보안 강화 (예정)
