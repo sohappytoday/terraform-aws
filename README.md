@@ -269,6 +269,7 @@ Private Subnet에 배치된 worker-node가 외부 인터넷에 접근하려면 �
 | 방향 | 포트 | 출처 | 설명 |
 |---|---|---|---|
 | Inbound | 22 (SSH) | 내 IP | 외부 접근은 SSH만 허용 |
+| Inbound | 전체 | Worker Node SG | Worker Node에서 Control Plane으로 오는 트래픽 허용 |
 | Outbound | 전체 | `0.0.0.0/0` | 패키지 설치·이미지 pull 등 인터넷 접근 필요 |
 
 **Worker Node SG (Private Subnet)**
