@@ -1,3 +1,4 @@
+ssh_user                       = "ubuntu"
 control_plane_instance_name    = "control-plane"
 control_plane_instance_type    = "t3.small"
 control_plane_root_volume_size = 20

@@ -37,3 +37,8 @@ output "control_plane_private_ip" {
   value       = module.control_plane.private_ip
   description = "control-plane Private IP"
 }
+
+output "ssh_user" {
+  value       = var.ssh_user
+  description = "EC2 SSH 접속 사용자"
+}
