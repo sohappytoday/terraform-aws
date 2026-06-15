@@ -31,6 +31,18 @@ resource "aws_key_pair" "worker_node" {
   public_key = file(var.public_key_path)
 }
 
+resource "aws_security_group_rule" "cp_from_worker_all" {
+  for_each = module.worker_node
+
+  type                     = "ingress"
+  description              = "Worker to Control Plane ALL"
+  from_port                = 0
+  to_port                  = 0
+  protocol                 = "-1"
+  source_security_group_id = each.value.security_group_id
+  security_group_id        = module.control_plane.security_group_id
+}
+
 module "worker_node" {
   for_each = var.worker_nodes
   source   = "./modules/ec2"
