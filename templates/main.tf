@@ -30,14 +30,14 @@ resource "aws_key_pair" "worker_node" {
   public_key = file(var.public_key_path)
 }
 
-resource "aws_security_group_rule" "cp_from_worker_6443" {
+resource "aws_security_group_rule" "cp_from_worker_all" {
   for_each = module.worker_node
 
   type                     = "ingress"
-  description              = "Worker Node → API Server"
-  from_port                = 6443
-  to_port                  = 6443
-  protocol                 = "tcp"
+  description              = "Cluster node traffic from worker node"
+  from_port                = 0
+  to_port                  = 0
+  protocol                 = "-1"
   source_security_group_id = each.value.security_group_id
   security_group_id        = module.control_plane.security_group_id
 }
@@ -53,32 +53,36 @@ module "worker_node" {
   key_pair_name    = aws_key_pair.worker_node.key_name
   vpc_id           = module.vpc.vpc_id
   subnet_id        = module.vpc.private_subnet_id
-  user_data = <<-EOF
+  user_data        = <<-EOF
     #!/bin/bash
     hostnamectl set-hostname ${each.key}
   EOF
 }
 
-resource "aws_security_group_rule" "worker_from_cp_10250" {
+resource "aws_security_group_rule" "worker_from_cp_all" {
   for_each = module.worker_node
 
   type                     = "ingress"
-  description              = "Control Plane → Kubelet API"
-  from_port                = 10250
-  to_port                  = 10250
-  protocol                 = "tcp"
+  description              = "Cluster node traffic from control plane"
+  from_port                = 0
+  to_port                  = 0
+  protocol                 = "-1"
   source_security_group_id = module.control_plane.security_group_id
   security_group_id        = each.value.security_group_id
 }
 
-resource "aws_security_group_rule" "worker_from_cp_10256" {
-  for_each = module.worker_node
+# Worker 노드 간 통신 (CNI 오버레이 네트워크, Pod 간 통신)
+resource "aws_security_group_rule" "worker_from_worker_all" {
+  for_each = {
+    for pair in setproduct(keys(var.worker_nodes), keys(var.worker_nodes)) :
+    "${pair[0]}_from_${pair[1]}" => pair
+  }
 
   type                     = "ingress"
-  description              = "Control Plane → kube-proxy"
-  from_port                = 10256
-  to_port                  = 10256
-  protocol                 = "tcp"
-  source_security_group_id = module.control_plane.security_group_id
-  security_group_id        = each.value.security_group_id
+  description              = "Cluster node traffic between worker nodes"
+  from_port                = 0
+  to_port                  = 0
+  protocol                 = "-1"
+  source_security_group_id = module.worker_node[each.value[1]].security_group_id
+  security_group_id        = module.worker_node[each.value[0]].security_group_id
 }
