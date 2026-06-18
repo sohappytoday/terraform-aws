@@ -68,7 +68,6 @@ templates/
 | `worker_key_pair_name` | 없음 | 모든 worker-node가 공유할 키 페어 이름 |
 | `public_key_path` | 없음 | 로컬 SSH 공개키(.pub) 경로 |
 | `ssh_allowed_cidr` | 없음 | SSH 허용 CIDR 목록 |
-| `ingress_rules` | `[]` | 추가 인바운드 규칙 목록 (SSH 제외) |
 
 **EC2 (control-plane) 변수**
 
@@ -79,7 +78,6 @@ templates/
 | `control_plane_root_volume_size` | `30` | 루트 볼륨 크기 (GB) |
 | `control_plane_root_volume_type` | `gp3` | 루트 볼륨 타입 |
 | `control_plane_ssh_allowed_cidr` | 없음 | SSH 허용 CIDR 목록 |
-| `control_plane_ingress_rules` | `[]` | 추가 인바운드 규칙 목록 (SSH 제외) |
 
 #### main.tf
 
@@ -124,7 +122,7 @@ worker-node(EC2) 관련 변수 값을 정의한다.
 - `variables.tf` — 모듈 내부 변수 선언 (루트에서 넘긴 값을 받는 창구)
 - `outputs.tf` — `instance_id`, `public_ip`, `private_ip`, `ami_id` 반환
 
-`aws_security_group`은 SSH 고정 인바운드(`ssh_allowed_cidr`) + `dynamic "ingress"`로 추가 규칙을 순회한다.
+`aws_security_group`은 SSH 고정 인바운드(`ssh_allowed_cidr`)만 허용한다. 노드 간 SG 참조 규칙은 루트에서 `aws_security_group_rule`로 관리한다.
 
 #### modules/lightsail/
 
@@ -266,19 +264,26 @@ Private Subnet에 배치된 worker-node가 외부 인터넷에 접근하려면 �
 
 ### Security Group 구성
 
+노드 간(Control Plane ↔ Worker, Worker ↔ Worker) 통신은 SG를 서로 참조해 전체 허용하고, SSH 같은 외부 진입 경로만 최소로 제한한다.
+
+Kubernetes는 사용하는 CNI(Flannel/Calico/Cilium)와 동작 모드(VXLAN, IPIP, Geneve 등)에 따라 노드 간 필요 포트가 크게 달라진다. 특정 CNI 포트만 열면 CNI를 교체할 때마다 SG를 수정해야 하므로, 노드 간은 전체 허용으로 두어 어떤 CNI든 동작하게 한다. Worker Node는 Private Subnet에 있어 외부 진입 경로가 없으므로 이 전체 허용이 외부 노출로 이어지지 않는다.
+
+SG 규칙은 CIDR이 아니라 `source_security_group_id`(SG 참조)로 정의한다. VPC CIDR이나 Subnet CIDR이 아니라 해당 SG가 붙은 클러스터 노드만 출처로 한정되므로, VPC에 다른 리소스를 추가해도 클러스터 노드와 통신하지 않는다.
+
 **Control Plane SG (Public Subnet)**
 
 | 방향 | 포트 | 출처 | 설명 |
 |---|---|---|---|
 | Inbound | 22 (SSH) | 내 IP | 외부 접근은 SSH만 허용 |
-| Inbound | 전체 | Worker Node SG | Worker Node에서 Control Plane으로 오는 트래픽 허용 |
+| Inbound | 전체 | Worker Node SG | Worker Node에서 오는 클러스터 트래픽 |
 | Outbound | 전체 | `0.0.0.0/0` | 패키지 설치·이미지 pull 등 인터넷 접근 필요 |
 
 **Worker Node SG (Private Subnet)**
 
 | 방향 | 포트 | 출처 | 설명 |
 |---|---|---|---|
-| Inbound | 전체 | Control Plane SG | Control Plane에서 오는 트래픽만 허용 |
+| Inbound | 전체 | Control Plane SG | Control Plane에서 오는 클러스터 트래픽 |
+| Inbound | 전체 | Worker Node SG | Worker 노드 간 통신 (CNI 오버레이, Pod 간 통신) |
 | Outbound | 전체 | `0.0.0.0/0` | 패키지 설치·이미지 pull 등 인터넷 접근 필요 |
 
 Outbound를 `0.0.0.0/0`으로 열어둔 이유는 이 프로젝트에서 kubeadm, kubectl, 컨테이너 이미지 등을 노드 안에서 직접 설치·pull해야 하기 때문이다. Outbound를 Worker Node SG로만 제한하면 인터넷 접근이 막혀 패키지를 사전에 준비해야 하므로, 편의를 위해 전체 허용을 유지한다.
