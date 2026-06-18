@@ -33,19 +33,6 @@ variable "ssh_allowed_cidr" {
   default     = []
 }
 
-variable "ingress_rules" {
-  type = list(object({
-    description     = string
-    from_port       = number
-    to_port         = number
-    protocol        = string
-    cidr_blocks     = optional(list(string), [])
-    security_groups = optional(list(string), [])
-  }))
-  description = "추가 인바운드 규칙 목록"
-  default     = []
-}
-
 variable "vpc_id" {
   type        = string
   description = "보안 그룹을 생성할 VPC ID"

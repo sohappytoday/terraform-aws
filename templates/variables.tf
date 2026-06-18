@@ -98,14 +98,3 @@ variable "control_plane_ssh_allowed_cidr" {
   description = "control-plane SSH 허용 CIDR 목록"
 }
 
-variable "control_plane_ingress_rules" {
-  type = list(object({
-    description = string
-    from_port   = number
-    to_port     = number
-    protocol    = string
-    cidr_blocks = list(string)
-  }))
-  description = "control-plane 추가 인바운드 규칙 목록 (SSH 제외)"
-  default     = []
-}

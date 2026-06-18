@@ -17,7 +17,6 @@ module "control_plane" {
   root_volume_type = var.control_plane_root_volume_type
   key_pair_name    = aws_key_pair.worker_node.key_name
   ssh_allowed_cidr = var.control_plane_ssh_allowed_cidr
-  ingress_rules    = var.control_plane_ingress_rules
   vpc_id           = module.vpc.vpc_id
   subnet_id        = module.vpc.public_subnet_id
   user_data        = <<-EOF
@@ -31,14 +30,14 @@ resource "aws_key_pair" "worker_node" {
   public_key = file(var.public_key_path)
 }
 
-resource "aws_security_group_rule" "cp_from_worker_all" {
+resource "aws_security_group_rule" "cp_from_worker_6443" {
   for_each = module.worker_node
 
   type                     = "ingress"
-  description              = "Worker to Control Plane ALL"
-  from_port                = 0
-  to_port                  = 0
-  protocol                 = "-1"
+  description              = "Worker Node → API Server"
+  from_port                = 6443
+  to_port                  = 6443
+  protocol                 = "tcp"
   source_security_group_id = each.value.security_group_id
   security_group_id        = module.control_plane.security_group_id
 }
@@ -54,17 +53,32 @@ module "worker_node" {
   key_pair_name    = aws_key_pair.worker_node.key_name
   vpc_id           = module.vpc.vpc_id
   subnet_id        = module.vpc.private_subnet_id
-  ingress_rules = [
-    {
-      description     = "Control Plane"
-      from_port       = 0
-      to_port         = 0
-      protocol        = "-1"
-      security_groups = [module.control_plane.security_group_id]
-    }
-  ]
   user_data = <<-EOF
     #!/bin/bash
     hostnamectl set-hostname ${each.key}
   EOF
+}
+
+resource "aws_security_group_rule" "worker_from_cp_10250" {
+  for_each = module.worker_node
+
+  type                     = "ingress"
+  description              = "Control Plane → Kubelet API"
+  from_port                = 10250
+  to_port                  = 10250
+  protocol                 = "tcp"
+  source_security_group_id = module.control_plane.security_group_id
+  security_group_id        = each.value.security_group_id
+}
+
+resource "aws_security_group_rule" "worker_from_cp_10256" {
+  for_each = module.worker_node
+
+  type                     = "ingress"
+  description              = "Control Plane → kube-proxy"
+  from_port                = 10256
+  to_port                  = 10256
+  protocol                 = "tcp"
+  source_security_group_id = module.control_plane.security_group_id
+  security_group_id        = each.value.security_group_id
 }
