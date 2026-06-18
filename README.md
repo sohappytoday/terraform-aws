@@ -255,12 +255,14 @@ Private Subnet에 배치된 worker-node가 외부 인터넷에 접근하려면 �
 
 실제 파드는 worker-node에서 실행되므로, worker-node의 CPU·메모리가 클러스터 성능을 결정한다. control-plane은 Kubernetes 컴포넌트만 돌리고 직접 워크로드를 받지 않기 때문에 worker-node보다 낮은 사양으로도 충분하다.
 
-이상적으로는 worker-node를 `t3.medium` 이상으로 잡는 것이 좋지만, 비용 문제로 control-plane(`t3.small`) 포함 전 노드를 `t3.small`로 통일했다. 스토리지는 가격이 저렴해 worker-node는 30GiB, control-plane은 20GiB로 차등 적용했다.
+초기에는 비용 문제로 전 노드를 `t3.small`로 통일했다. 그러나 Ansible `fetch` 모듈이 내부적으로 slurp을 사용해 `/tmp/k8s-worker-debs.tar.gz` 전체를 메모리에 올린 뒤 base64 인코딩하여 SSH로 전송하는 방식 때문에, t3.small(RAM 2GB)에서 아카이브 크기 + base64 오버헤드 + 실행 중인 프로세스가 가용 메모리를 초과해 작업이 33분 이상 멈추는 OOM 상황이 발생했다.
+
+전송 방식을 scp로 전환했지만, 이후 단계인 kubeadm init, CNI 파드 스케줄링, 컨테이너 이미지 pull도 메모리를 경쟁하기 때문에 t3.small은 여전히 빠듯하다. 충분한 여유를 확보하기 위해 전 노드를 `t3.medium`(RAM 4GB)으로 상향했다. 스토리지는 가격이 저렴해 worker-node는 30GiB, control-plane은 20GiB로 차등 적용했다.
 
 | 노드 | 타입 | 스토리지 |
 |---|---|---|
-| control-plane | t3.small | 20GiB gp3 |
-| worker-node × 2 | t3.small | 30GiB gp3 |
+| control-plane | t3.medium | 20GiB gp3 |
+| worker-node × 2 | t3.medium | 30GiB gp3 |
 
 ### Security Group 구성
 
