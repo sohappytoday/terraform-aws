@@ -24,5 +24,7 @@ variable "private_subnet_cidr" {
 variable "availability_zone" {
   type        = string
   description = "서브넷을 생성할 가용 영역"
-  default     = "ap-northeast-2a"
+  # c7i-flex.large 미지원
+  # default     = "ap-northeast-2a"
+  default     = "ap-northeast-2b"
 }
