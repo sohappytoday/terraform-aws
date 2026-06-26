@@ -31,7 +31,7 @@ variable "availability_zone" {
   description = "서브넷을 생성할 가용 영역"
   # c7i-flex.large 미지원
   # default     = "ap-northeast-2a"
-  default     = "ap-northeast-2b"
+  default = "ap-northeast-2b"
 }
 
 # -----------------------------------------------
@@ -72,27 +72,14 @@ variable "public_key_path" {
 # EC2 (control-plane)
 # -----------------------------------------------
 
-variable "control_plane_instance_name" {
-  type        = string
-  description = "control-plane EC2 인스턴스 이름"
-}
-
-variable "control_plane_instance_type" {
-  type        = string
-  description = "control-plane EC2 인스턴스 타입"
-  default     = "t3.medium"
-}
-
-variable "control_plane_root_volume_size" {
-  type        = number
-  description = "control-plane 루트 볼륨 크기 (GB)"
-  default     = 30
-}
-
-variable "control_plane_root_volume_type" {
-  type        = string
-  description = "control-plane 루트 볼륨 타입"
-  default     = "gp3"
+variable "control_plane_nodes" {
+  type = map(object({
+    instance_type    = string
+    instance_name    = string
+    root_volume_size = number
+    root_volume_type = string
+  }))
+  description = "control-plane 노드 목록. 키는 노드 식별자(hostname), 값은 노드별 사양. HA 확장 시 항목 추가"
 }
 
 variable "control_plane_ssh_allowed_cidr" {
