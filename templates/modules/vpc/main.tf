@@ -55,6 +55,22 @@ resource "aws_route_table_association" "public" {
   route_table_id = aws_route_table.public.id
 }
 
+# Private Subnet 전용 라우트 테이블.
+# 기본은 local 라우트만 가지며(인터넷 경로 없음), NAT 인스턴스로 가는
+# 0.0.0.0/0 라우트는 root에서 aws_route로 주입한다(NAT 모듈과의 순환 의존 방지).
+resource "aws_route_table" "private" {
+  vpc_id = aws_vpc.this.id
+
+  tags = {
+    Name = "${var.name}-private-rt"
+  }
+}
+
+resource "aws_route_table_association" "private" {
+  subnet_id      = aws_subnet.private.id
+  route_table_id = aws_route_table.private.id
+}
+
 # -----------------------------------------------
 # SSM VPC Interface Endpoint
 # Private Subnet의 인스턴스가 NAT/IGW 없이 AWS 내부망으로 SSM에 접근하도록 한다.

@@ -19,7 +19,7 @@ module "control_plane" {
   key_pair_name        = aws_key_pair.worker_node.key_name
   ssh_allowed_cidr     = var.control_plane_ssh_allowed_cidr
   vpc_id               = module.vpc.vpc_id
-  subnet_id            = module.vpc.public_subnet_id
+  subnet_id            = module.vpc.private_subnet_id
   iam_instance_profile = aws_iam_instance_profile.ssm.name
   user_data            = <<-EOF
     #!/bin/bash
@@ -47,6 +47,30 @@ module "worker_node" {
     #!/bin/bash
     hostnamectl set-hostname ${each.key}
   EOF
+}
+
+# NAT 인스턴스 (Public Subnet)
+# control-plane·worker가 모두 Private Subnet으로 이동하면서 인터넷 outbound 경로가
+# 사라진다(패키지 설치·이미지 pull 불가). NAT Gateway는 비싸므로, 작은 EC2를
+# NAT로 두어 Private Subnet의 outbound를 중계한다.
+module "nat" {
+  source = "./modules/nat"
+
+  name                 = var.cluster_name
+  vpc_id               = module.vpc.vpc_id
+  subnet_id            = module.vpc.public_subnet_id
+  instance_type        = var.nat_instance_type
+  private_subnet_cidr  = var.private_subnet_cidr
+  key_pair_name        = aws_key_pair.worker_node.key_name
+  iam_instance_profile = aws_iam_instance_profile.ssm.name
+}
+
+# Private Subnet → 인터넷 outbound를 NAT 인스턴스로 보내는 라우트.
+# 라우트 테이블(vpc 모듈)과 NAT ENI(nat 모듈)를 root에서 연결한다.
+resource "aws_route" "private_to_nat" {
+  route_table_id         = module.vpc.private_route_table_id
+  destination_cidr_block = "0.0.0.0/0"
+  network_interface_id   = module.nat.network_interface_id
 }
 
 # 모든 클러스터 노드(control-plane + worker)의 SG를 한데 모음

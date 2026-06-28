@@ -1,7 +1,7 @@
 ssh_user = "kgeo6"
 
-# 잠시 열어둘것
-control_plane_ssh_allowed_cidr = ["0.0.0.0/0"]
+# Private Subnet으로 이동 후 SSM으로만 접근 → SSH inbound 제거
+control_plane_ssh_allowed_cidr = []
 
 control_plane_nodes = {
   "master-1" = {

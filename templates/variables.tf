@@ -84,6 +84,17 @@ variable "control_plane_nodes" {
 
 variable "control_plane_ssh_allowed_cidr" {
   type        = list(string)
-  description = "control-plane SSH 허용 CIDR 목록"
+  description = "control-plane SSH 허용 CIDR 목록. Private 이동 후에는 SSM으로만 접근하므로 빈 목록을 권장"
+  default     = []
+}
+
+# -----------------------------------------------
+# NAT 인스턴스
+# -----------------------------------------------
+
+variable "nat_instance_type" {
+  type        = string
+  description = "NAT 인스턴스 타입. 패킷 포워딩만 하므로 작은 타입으로 충분하나, 이 계정은 free-tier 가능 타입만 허용해 t3.micro 사용"
+  default     = "t3.micro"
 }
 

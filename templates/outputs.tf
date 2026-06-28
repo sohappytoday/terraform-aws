@@ -47,3 +47,13 @@ output "ssh_user" {
   value       = var.ssh_user
   description = "EC2 SSH 접속 사용자"
 }
+
+output "nat_instance_id" {
+  value       = module.nat.instance_id
+  description = "NAT 인스턴스 ID"
+}
+
+output "nat_public_ip" {
+  value       = module.nat.public_ip
+  description = "NAT 인스턴스 Public IP"
+}

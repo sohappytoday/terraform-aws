@@ -17,3 +17,8 @@ output "vpce_security_group_id" {
   value       = aws_security_group.vpce.id
   description = "SSM Interface Endpoint에 연결된 Security Group ID"
 }
+
+output "private_route_table_id" {
+  value       = aws_route_table.private.id
+  description = "Private Subnet 라우트 테이블 ID (NAT 라우트 주입 대상)"
+}
