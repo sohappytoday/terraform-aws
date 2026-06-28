@@ -1,6 +1,7 @@
-ssh_user = "ubuntu"
+ssh_user = "kgeo6"
 
-control_plane_ssh_allowed_cidr = ["121.134.174.157/32", "3.39.227.252/32"]
+# 잠시 열어둘것
+control_plane_ssh_allowed_cidr = ["0.0.0.0/0"]
 
 control_plane_nodes = {
   "master-1" = {

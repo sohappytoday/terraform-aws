@@ -2,10 +2,29 @@
 
 EC2(control-plane) + EC2(worker-node) 조합으로 Kubernetes 클러스터를 프로비저닝한다.
 
+### 왜 만들었는가
+
+Kubernetes 클러스터를 올리려면 그 아래에 네트워크(VPC, 서브넷, 라우팅, 보안 그룹)와 컴퓨팅(control-plane / worker-node 인스턴스)이 먼저 갖춰져야 한다. 이 사전 인프라를 콘솔에서 수동으로 클릭해 만들면 매번 구성이 미묘하게 달라지고, 무엇을 어떤 이유로 그렇게 설정했는지 기록이 남지 않는다.
+
+이 프로젝트는 클러스터 아래의 인프라 전체를 Terraform(IaC) 코드로 정의해 **재현 가능하고 버전 관리되는 형태**로 만드는 것을 목표로 한다. 같은 코드로 언제든 동일한 환경을 다시 세우고, 변경 이력을 git으로 추적하며, 구성의 근거를 코드와 문서에 함께 남긴다.
+
+### 어떤 문제를 어떻게 풀었는가
+
+인프라를 한 번에 완성하지 않고, 실제로 부딪힌 문제를 버전 단위로 풀어 나가며 발전시켰다.
+
+- **노드 간 통신이 인터넷을 경유하는 문제 (v1 → v2)** — v1은 LightSail(control-plane)과 EC2(worker-node)를 조합했으나, 둘은 서로 다른 네트워크라 public IP로 통신해야 했다. Kubernetes 핵심 컴포넌트는 private IP 기준으로 통신하므로 이는 보안 노출과 데이터 전송 비용으로 이어진다. LightSail은 커스텀 VPC와 피어링할 수 없어, **전 노드를 EC2로 통일하고 커스텀 VPC 하나에 배치**해 private IP 직접 통신으로 전환했다.
+
+- **control-plane이 인터넷에 직접 노출되는 문제 (v2 → v3 예정)** — v2의 control-plane은 SSH 관리를 위해 Public IP를 가진다. 보안 그룹으로 막아도 외부에서 도달 가능한 경로 자체가 존재한다. v3에서는 **외부 진입점을 Reverse Proxy EC2 하나로 좁히고**, control-plane과 worker-node를 모두 Private Subnet에 격리한 뒤 control-plane 접근은 SSM Session Manager + VPC Endpoint로 처리한다.
+
+- **CNI 교체마다 보안 그룹을 고쳐야 하는 문제** — CNI(Flannel/Calico/Cilium)와 모드에 따라 노드 간 필요 포트가 달라진다. 특정 포트만 열면 CNI를 바꿀 때마다 SG를 수정해야 한다. 노드 간 규칙을 CIDR이 아닌 **SG 참조(all-to-all)로 전체 허용**해, 어떤 CNI든 동작하면서도 출처는 클러스터 노드로만 한정했다.
+
+각 결정의 자세한 근거는 아래 버전별 섹션에 정리되어 있고, 구축 중 겪은 운영 이슈는 각 버전의 **트러블슈팅** 항목에 따로 기록한다.
+
 ### 버전 인덱스
 
 - [v1: LightSail + EC2 조합 — 클러스터 구축을 위한 인스턴스 생성](#v1-lightsail--ec2-조합)
 - [v2: EC2 전용 구성 + VPC](#v2-ec2-전용-구성--vpc)
+  - [트러블슈팅: t3.small에서 빌드 중 OOM 발생](#t3small에서-빌드-중-oom-발생)
 - [v3: Reverse Proxy 기반 보안 강화 (예정)](#v3-reverse-proxy-기반-보안-강화-예정)
 
 ---
@@ -253,14 +272,22 @@ Private Subnet에 배치된 worker-node가 외부 인터넷에 접근하려면 �
 
 실제 파드는 worker-node에서 실행되므로, worker-node의 CPU·메모리가 클러스터 성능을 결정한다. control-plane은 Kubernetes 컴포넌트만 돌리고 직접 워크로드를 받지 않기 때문에 worker-node보다 낮은 사양으로도 충분하다.
 
-초기에는 비용 문제로 전 노드를 `t3.small`로 통일했다. 그러나 Ansible `fetch` 모듈이 내부적으로 slurp을 사용해 `/tmp/k8s-worker-debs.tar.gz` 전체를 메모리에 올린 뒤 base64 인코딩하여 SSH로 전송하는 방식 때문에, t3.small(RAM 2GB)에서 아카이브 크기 + base64 오버헤드 + 실행 중인 프로세스가 가용 메모리를 초과해 작업이 33분 이상 멈추는 OOM 상황이 발생했다.
-
-전송 방식을 scp로 전환했지만, 이후 단계인 kubeadm init, CNI 파드 스케줄링, 컨테이너 이미지 pull도 메모리를 경쟁하기 때문에 t3.small은 여전히 빠듯하다. 충분한 여유를 확보하기 위해 전 노드를 `t3.medium`(RAM 4GB)으로 상향했다. 스토리지는 가격이 저렴해 worker-node는 30GiB, control-plane은 20GiB로 차등 적용했다.
+초기에는 비용 문제로 전 노드를 `t3.small`로 통일했으나, 빌드 과정에서 메모리 부족(OOM)을 겪고 `c7i-flex.large`(RAM 8GB)로 상향했다(아래 [트러블슈팅](#트러블슈팅) 참고). `c7i-flex.large`는 Free Plan에서 사용할 수 있는 인스턴스 중 메모리 용량이 가장 커서 선택했다. 스토리지는 가격이 저렴해 worker-node는 30GiB, control-plane은 20GiB로 차등 적용했다.
 
 | 노드 | 타입 | 스토리지 |
 |---|---|---|
-| control-plane | t3.medium | 20GiB gp3 |
-| worker-node × 2 | t3.medium | 30GiB gp3 |
+| control-plane | c7i-flex.large | 20GiB gp3 |
+| worker-node × 2 | c7i-flex.large | 30GiB gp3 |
+
+### 트러블슈팅
+
+#### t3.small에서 빌드 중 OOM 발생
+
+비용 때문에 전 노드를 `t3.small`(RAM 2GB)로 통일했더니, 클러스터 구축 도중 메모리가 부족해 작업이 33분 이상 멈추는 OOM이 발생했다.
+
+원인은 Ansible `fetch` 모듈이 내부적으로 slurp을 사용해 `/tmp/k8s-worker-debs.tar.gz` 전체를 메모리에 올린 뒤 base64 인코딩하여 SSH로 전송하는 방식이었다. 아카이브 크기 + base64 오버헤드 + 실행 중인 프로세스가 가용 메모리를 초과했다.
+
+전송 방식을 scp로 전환해 이 단계는 넘겼지만, 이후 kubeadm init, CNI 파드 스케줄링, 컨테이너 이미지 pull도 메모리를 경쟁하기 때문에 t3.small은 여전히 빠듯했다. 충분한 여유를 확보하기 위해 전 노드를 Free Plan에서 메모리 용량이 가장 큰 `c7i-flex.large`(RAM 8GB)로 상향했다.
 
 ### Security Group 구성
 

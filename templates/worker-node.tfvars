@@ -1,4 +1,4 @@
-public_key_path      = "/home/ubuntu/.ssh/terraform-key.pub"
+public_key_path      = "/home/kgeo6/.ssh/terraform-key.pub"
 worker_key_pair_name = "terraform-key"
 
 worker_nodes = {
