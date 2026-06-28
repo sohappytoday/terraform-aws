@@ -26,5 +26,5 @@ variable "availability_zone" {
   description = "서브넷을 생성할 가용 영역"
   # c7i-flex.large 미지원
   # default     = "ap-northeast-2a"
-  default     = "ap-northeast-2b"
+  default = "ap-northeast-2b"
 }
