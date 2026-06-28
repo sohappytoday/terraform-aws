@@ -25,7 +25,9 @@ Kubernetes 클러스터를 올리려면 그 아래에 네트워크(VPC, 서브�
 - [v1: LightSail + EC2 조합 — 클러스터 구축을 위한 인스턴스 생성](#v1-lightsail--ec2-조합)
 - [v2: EC2 전용 구성 + VPC](#v2-ec2-전용-구성--vpc)
   - [트러블슈팅: t3.small에서 빌드 중 OOM 발생](#t3small에서-빌드-중-oom-발생)
-- [v3: Reverse Proxy 기반 보안 강화 (예정)](#v3-reverse-proxy-기반-보안-강화-예정)
+- [v3: Reverse Proxy 기반 보안 강화 (진행 중)](#v3-reverse-proxy-기반-보안-강화-진행-중)
+  - [진행 방식 (단계별)](#진행-방식-단계별)
+  - [1단계: SSM IAM과 VPC Endpoint 구성 (완료)](#1단계-ssm-iam과-vpc-endpoint-구성-완료)
 
 ---
 
@@ -354,9 +356,22 @@ ssh ubuntu@<worker-node-private-ip>
 
 ---
 
-## v3: Reverse Proxy 기반 보안 강화 (예정)
+## v3: Reverse Proxy 기반 보안 강화 (진행 중)
 
 v2의 control-plane은 Public IP를 가지고 있어 보안 그룹으로 접근을 제한하더라도 인터넷에 노출된 상태다. 보안 그룹이 방어막 역할을 하지만, 서버 자체가 공인 IP를 가진다는 것은 외부에서 직접 도달 가능한 경로가 존재한다는 의미다. 외부에서 직접 접근 가능한 서버를 Reverse Proxy 하나로 최소화하고, 나머지 노드는 모두 Private Subnet에 격리해 이 문제를 해결한다.
+
+### 진행 방식 (단계별)
+
+v3는 한 번에 적용하지 않고, 의존 관계 순서대로 단계를 나눠 진행한다. 각 단계마다 `apply`로 동작을 검증하고 다음으로 넘어간다.
+
+| 단계 | 내용 | 상태 |
+|---|---|---|
+| 1단계 | SSM IAM(Role/Instance Profile) + VPC Interface Endpoint 구성 | 완료 |
+| 2단계 | control-plane을 Private Subnet으로 이동, Public IP·SSH inbound 제거 | 예정 |
+| 3단계 | Reverse Proxy(Nginx) EC2 추가 및 Worker로의 라우팅 구성 | 예정 |
+| 4단계 | NACL 도입 (서브넷 레벨 이중 방어선) | 예정 |
+
+1단계를 먼저 하는 이유는, control-plane을 Private로 옮기기(2단계) 전에 SSM 접근 경로(IAM + Endpoint)가 먼저 갖춰져 있어야 하기 때문이다. 순서가 바뀌면 control-plane이 Private로 가는 순간 접근 수단이 사라진다. NACL(4단계)은 stateless라 잘못 적용하면 정상 트래픽까지 막으므로 맨 마지막에 둔다.
 
 ### 목표
 
@@ -480,3 +495,45 @@ aws ssm start-session \
   --document-name AWS-StartPortForwardingSession \
   --parameters '{"portNumber":["6443"],"localPortNumber":["6443"]}'
 ```
+
+### 1단계: SSM IAM과 VPC Endpoint 구성 (완료)
+
+control-plane을 Private Subnet으로 옮기기(2단계) 전에, 인터넷 없이 SSM Session Manager로 접근할 수 있는 기반을 먼저 구성했다.
+
+**구성한 것**
+
+| 구분 | 리소스 | 위치 |
+|---|---|---|
+| SSM 권한 | `aws_iam_role` + `AmazonSSMManagedInstanceCore` + `aws_iam_instance_profile` | `iam.tf` (root) |
+| 인스턴스 연결 | ec2 모듈에 `iam_instance_profile` 변수 추가 → control-plane에 연결 | `modules/ec2`, `main.tf` |
+| 사설 통신 경로 | SSM Interface Endpoint 3종 (`ssm`/`ssmmessages`/`ec2messages`) | `modules/vpc` |
+| 엔드포인트 SG | VPC 내부에서 오는 443만 허용 | `modules/vpc` |
+
+- 엔드포인트 서비스명은 `aws_vpc_endpoint_service` data source로 리전에 맞게 자동 해석한다 (서비스명 하드코딩 없음).
+- 엔드포인트에 `private_dns_enabled = true`를 설정해야 `ssm.<region>.amazonaws.com` 같은 기본 도메인이 엔드포인트의 사설 IP로 해석된다. 이 설정이 없으면 SSM 접속이 실패한다.
+- Session Manager 접속에는 `ssm`, `ssmmessages`, `ec2messages` 3종이 모두 필요하다.
+
+**필요한 IAM 권한 (인스턴스 외)**
+
+control-plane 인스턴스에 붙는 권한은 위 Instance Profile로 끝나지만, 작업 주체에 따라 추가 권한이 필요하다.
+
+| 주체 | 필요한 권한 | 이유 |
+|---|---|---|
+| `terraform apply` 실행 주체 | IAM Role/Profile 생성 권한 + `iam:PassRole`(→ `ec2.amazonaws.com`) | iam.tf 리소스를 만들고 EC2에 프로파일을 붙이기 위함 |
+| SSM으로 접속할 사용자 | `ssm:StartSession`, `ssm:DescribeInstanceInformation` 등 | Session Manager 접속·조회 |
+
+**검증**
+
+apply 후 control-plane이 SSM에 정상 등록·접속되는 것을 확인했다.
+
+```bash
+# SSM 등록 확인 (PingStatus: Online)
+aws ssm describe-instance-information
+
+# Session Manager로 접속 (로컬에 session-manager-plugin 필요)
+aws ssm start-session --target <control-plane-instance-id>
+```
+
+**이 단계의 범위**
+
+1단계에서 control-plane은 아직 Public Subnet에 있다. "인터넷 없이 사설 경로로만 접근"이 실제로 보장되는지는, control-plane을 Private로 옮기고 Public IP를 제거한 뒤에도 SSM 접속이 유지되는지 확인하는 2단계에서 검증한다.
