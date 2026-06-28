@@ -48,3 +48,9 @@ variable "user_data" {
   description = "인스턴스 초기화 스크립트"
   default     = ""
 }
+
+variable "iam_instance_profile" {
+  type        = string
+  description = "EC2에 연결할 IAM 인스턴스 프로파일 이름 (SSM 접근 등). null이면 미연결"
+  default     = null
+}
