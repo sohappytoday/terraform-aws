@@ -28,6 +28,8 @@ Kubernetes 클러스터를 올리려면 그 아래에 네트워크(VPC, 서브�
 - [v3: Reverse Proxy 기반 보안 강화 (진행 중)](#v3-reverse-proxy-기반-보안-강화-진행-중)
   - [진행 방식 (단계별)](#진행-방식-단계별)
   - [1단계: SSM IAM과 VPC Endpoint 구성 (완료)](#1단계-ssm-iam과-vpc-endpoint-구성-완료)
+  - [2단계: control-plane Private 이동과 NAT Instance (완료)](#2단계-control-plane-private-이동과-nat-instance-완료)
+    - [트러블슈팅: Private 이동 후 인터넷 outbound 단절](#트러블슈팅-private-이동-후-인터넷-outbound-단절)
 
 ---
 
@@ -367,7 +369,7 @@ v3는 한 번에 적용하지 않고, 의존 관계 순서대로 단계를 나�
 | 단계 | 내용 | 상태 |
 |---|---|---|
 | 1단계 | SSM IAM(Role/Instance Profile) + VPC Interface Endpoint 구성 | 완료 |
-| 2단계 | control-plane을 Private Subnet으로 이동, Public IP·SSH inbound 제거 | 예정 |
+| 2단계 | control-plane을 Private Subnet으로 이동, Public IP·SSH inbound 제거 (+ NAT Instance) | 완료 |
 | 3단계 | Reverse Proxy(Nginx) EC2 추가 및 Worker로의 라우팅 구성 | 예정 |
 | 4단계 | NACL 도입 (서브넷 레벨 이중 방어선) | 예정 |
 
@@ -537,3 +539,36 @@ aws ssm start-session --target <control-plane-instance-id>
 **이 단계의 범위**
 
 1단계에서 control-plane은 아직 Public Subnet에 있다. "인터넷 없이 사설 경로로만 접근"이 실제로 보장되는지는, control-plane을 Private로 옮기고 Public IP를 제거한 뒤에도 SSM 접속이 유지되는지 확인하는 2단계에서 검증한다.
+
+### 2단계: control-plane Private 이동과 NAT Instance (완료)
+
+control-plane을 Public Subnet에서 Private Subnet으로 옮기고, Public IP와 SSH inbound를 제거했다. 이제 control-plane과 worker-node가 모두 Private Subnet에 있고, 외부에서 직접 도달 가능한 경로가 없으며 관리 접근은 SSM으로만 이루어진다.
+
+**바꾼 것**
+
+- `main.tf`: control_plane의 subnet을 `public_subnet_id` → `private_subnet_id`로 변경
+- `control-plane.tfvars`: `control_plane_ssh_allowed_cidr = []` 로 SSH inbound 제거
+- Private Subnet은 `map_public_ip_on_launch = false`라 control-plane은 더 이상 Public IP를 받지 않는다
+
+#### 트러블슈팅: Private 이동 후 인터넷 outbound 단절
+
+**증상** — control-plane과 worker-node를 모두 Private Subnet에 배치하니, 두 노드 모두 인터넷으로 나가는 경로가 사라졌다. Private Subnet에는 NAT가 없어 `apt install`, kubeadm 이미지 pull 등 노드가 스스로 외부로 나가야 하는 작업이 전부 막힌다. (Security Group의 outbound는 `0.0.0.0/0`으로 열려 있어도, 인터넷으로 가는 라우트 자체가 없기 때문이다. "막은 것"이 아니라 "길이 없는" 상태다.)
+
+**검토** — 이를 해결하려면 Private Subnet에 outbound 경로(NAT)가 필요하다. AWS 관리형 NAT Gateway가 가장 간편하지만, 시간당 + 데이터 처리 요금이 붙어 24시간 운영 시 월 ~$42로 학습용에는 부담이 컸다.
+
+**해결** — 비용을 낮추기 위해, 저렴한 EC2(`t3.micro`)를 NAT 용도로 Public Subnet에 두는 NAT Instance 방식을 택했다. Private Subnet 라우트 테이블에 `0.0.0.0/0 → NAT 인스턴스` 경로를 추가해 outbound를 중계한다.
+
+- NAT 인스턴스는 자신이 목적지가 아닌 트래픽을 중계하므로 `source_dest_check = false`가 필수다.
+- `user_data`로 `net.ipv4.ip_forward=1` 활성화 + `iptables ... MASQUERADE`를 구성하고, 재부팅 후에도 유지되도록 `iptables-persistent`로 저장한다.
+- 구성은 AWS 공식 문서 [NAT 인스턴스](https://docs.aws.amazon.com/ko_kr/vpc/latest/userguide/work-with-nat-instances.html)를 참고했다.
+- 인스턴스 타입은 처음 `t3.nano`로 시도했으나, 이 계정은 Free Tier 가능 타입만 허용해 `terraform apply` 시 `InvalidParameterCombination: ... not eligible for Free Tier` 오류가 발생했다. Free Tier 가능 목록 중 가장 작은 x86 타입인 `t3.micro`(1GB)로 변경했다. NAT는 패킷 포워딩만 하므로 1GB로도 충분하다.
+
+NAT는 노드가 **먼저** 외부로 나가는 outbound만을 위한 것이다. 사용자에게 서비스 화면을 보여주는 것은 사용자가 보낸 inbound 요청에 대한 응답이며, 이는 3단계 Reverse Proxy를 통해 처리되므로 NAT와 무관하다.
+
+**구성**
+
+| 노드 | 타입 | 위치 | Public IP | 인터넷 outbound |
+|---|---|---|---|---|
+| NAT Instance | t3.micro | Public Subnet | 있음 | 직접 (IGW) |
+| control-plane | c7i-flex.large | Private Subnet | 없음 | NAT 경유 |
+| worker-node | c7i-flex.large | Private Subnet | 없음 | NAT 경유 |
