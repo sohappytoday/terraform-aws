@@ -114,3 +114,13 @@ variable "ingress_nodeport" {
   default     = 30080
 }
 
+# -----------------------------------------------
+# Network ACL (Public Subnet)
+# -----------------------------------------------
+
+variable "blocked_cidrs" {
+  type        = list(string)
+  description = "Public Subnet에서 차단할 악성 출처 CIDR 목록. Security Group은 deny를 지원하지 않아 특정 IP를 막을 수 없으므로 NACL에서 deny한다. 예: [\"203.0.113.10/32\"]"
+  default     = []
+}
+

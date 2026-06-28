@@ -31,6 +31,7 @@ Kubernetes 클러스터를 올리려면 그 아래에 네트워크(VPC, 서브�
   - [2단계: control-plane Private 이동과 NAT Instance (완료)](#2단계-control-plane-private-이동과-nat-instance-완료)
     - [트러블슈팅: Private 이동 후 인터넷 outbound 단절](#트러블슈팅-private-이동-후-인터넷-outbound-단절)
   - [3단계: Reverse Proxy (완료)](#3단계-reverse-proxy-완료)
+  - [4단계: NACL 도입 (완료)](#4단계-nacl-도입-완료)
 
 ---
 
@@ -372,7 +373,7 @@ v3는 한 번에 적용하지 않고, 의존 관계 순서대로 단계를 나�
 | 1단계 | SSM IAM(Role/Instance Profile) + VPC Interface Endpoint 구성 | 완료 |
 | 2단계 | control-plane을 Private Subnet으로 이동, Public IP·SSH inbound 제거 (+ NAT Instance) | 완료 |
 | 3단계 | Reverse Proxy(Nginx) EC2 추가 및 Worker로의 라우팅 구성 | 완료 |
-| 4단계 | NACL 도입 (서브넷 레벨 이중 방어선) | 예정 |
+| 4단계 | NACL 도입 (서브넷 레벨 이중 방어선) | 완료 |
 
 1단계를 먼저 하는 이유는, control-plane을 Private로 옮기기(2단계) 전에 SSM 접근 경로(IAM + Endpoint)가 먼저 갖춰져 있어야 하기 때문이다. 순서가 바뀌면 control-plane이 Private로 가는 순간 접근 수단이 사라진다. NACL(4단계)은 stateless라 잘못 적용하면 정상 트래픽까지 막으므로 맨 마지막에 둔다.
 
@@ -401,6 +402,24 @@ EC2
 ```
 
 NACL은 stateless이기 때문에 인바운드와 아웃바운드 규칙을 각각 명시해야 한다. 서브넷 전체에 적용되므로 Security Group보다 상위 레이어에서 불필요한 트래픽을 차단할 수 있다.
+
+#### 아키텍처 설계 trade-off: 왜 Public Subnet에만 NACL을 도입하는가
+
+**배경** — 작년 서비스를 운영할 때, 특정 악성 IP가 트래픽 공격(traffic attack)을 시도한 사례가 있었다. 외부에 공개된 진입점이 이런 공격의 표적이 되므로, 특정 출처를 차단할 수단이 필요했다.
+
+**문제 — Security Group만으로는 특정 IP를 차단할 수 없다** — Security Group은 allow 규칙만 지원한다. 외부에 공개하는 서비스(HTTP/HTTPS)는 결국 `0.0.0.0/0`으로 열 수밖에 없고, "이 악성 IP만 빼고 허용" 같은 deny가 불가능하다. 도구를 Terraform으로 바꿔도 이건 Security Group의 본질적 한계라 해결되지 않는다.
+
+**결정 — 인터넷 진입점이 있는 Public Subnet에 NACL을 도입한다** — 외부에서 직접 도달 가능한 입구인 Reverse Proxy가 Public Subnet에 있다. 악성 IP가 처음 닿는 지점이 이 서브넷이므로, NACL의 deny 규칙으로 **Reverse Proxy에 닿기 전, 서브넷 경계에서 악성 IP를 차단**한다. Private Subnet은 외부에서 직접 들어오는 경로 자체가 없어 악성 IP가 닿을 일이 없으므로, 차단용 NACL을 두지 않는다.
+
+| 구분 | Security Group 단독 | + Public Subnet NACL |
+|---|---|---|
+| 공개 서비스 | `0.0.0.0/0` 허용만 가능 | 동일하게 허용하되 |
+| 특정 악성 IP | 차단 불가 (deny 없음) | **deny로 핀포인트 차단 가능** |
+| 차단 위치 | 인스턴스 도달 후 | 서브넷 경계(인스턴스 도달 전) |
+
+**대가(trade-off)** — NACL **리소스 자체는 무료**다(AWS는 NACL에 별도 과금하지 않는다 — 비용이 큰 것은 NAT Gateway 쪽이며 NACL과는 무관하다). 다만 NACL은 **stateless**라서, 인바운드를 허용하면 그 응답용 **ephemeral port(1024~65535) 아웃바운드**를 함께 열어야 하는 등 규칙을 양방향으로 직접 명시해야 한다. 잘못 적용하면 정상 트래픽까지 끊기므로, NACL의 진짜 비용은 요금이 아니라 **운영 복잡도와 오설정 위험**이다. 이 위험 때문에 v3에서는 NACL을 모든 경로가 검증된 뒤 맨 마지막(4단계)에 적용한다.
+
+> 정리: 막고 싶은 것은 "특정 악성 IP"이고, 그 표적은 Public Subnet의 Reverse Proxy다. Security Group은 deny가 없어 이를 못 막지만 NACL은 막을 수 있다. 따라서 NACL은 **Public Subnet에만, 악성 IP deny 목적으로** 도입한다.
 
 ### 네트워크 구조
 
@@ -608,3 +627,68 @@ worker-node는 Private Subnet에 있어 외부 사용자가 직접 접근할 수
 - Reverse Proxy에서 `curl http://<worker_private_ip>:30080` → `Connection refused` : RP→worker NodePort 경로와 SG 규칙이 정상(포트는 닿고 listen하는 서비스만 없음).
 
 실제 end-to-end 동작(`curl`로 앱 응답 확인)은 클러스터에 Ingress Controller를 설치한 뒤 검증한다.
+
+### 4단계: NACL 도입 (완료)
+
+Reverse Proxy가 위치한 Public Subnet에 NACL을 추가해, Security Group이 막지 못하는 **특정 악성 IP 차단**을 서브넷 경계에서 처리한다. 도입 배경과 trade-off는 위 [아키텍처 설계 trade-off](#아키텍처-설계-trade-off-왜-public-subnet에만-nacl을-도입하는가) 참고.
+
+**구성한 것**
+
+| 구분 | 리소스 | 위치 |
+|---|---|---|
+| 경계 방화벽 | `aws_network_acl`(Public Subnet 연결) | `main.tf` (root) |
+| 악성 IP 차단 | `blocked_cidrs`별 deny 규칙(inbound/outbound) | `main.tf` (root) |
+| 차단 목록 입력 | `blocked_cidrs` 변수(`list(string)`, 기본 `[]`) | `variables.tf` (root) |
+
+NACL은 vpc 모듈(네트워크 기본 요소)이 아니라 root에 둔다. 차단 IP 목록은 네트워크 **정책**에 해당하고, NAT 라우트·노드 간 SG 규칙처럼 모듈을 가로지르는 wiring을 root에서 관리하는 기존 구성과 일관성을 맞추기 위함이다.
+
+**규칙 구성**
+
+NACL은 stateless라 응답(ephemeral port)까지 직접 허용해야 하고, `rule_number` 오름차순으로 평가되어 먼저 매치되면 종료된다. 그래서 deny(100번대)를 allow(200번대)보다 앞에 둔다. inbound·outbound 번호 공간은 서로 독립적이다.
+
+| 방향 | rule_no | 동작 | 대상 | 포트 | 목적 |
+|---|---|---|---|---|---|
+| In | 100~ | **deny** | `blocked_cidrs` | all | 악성 IP 차단(최우선) |
+| In | 200 | allow | VPC CIDR | all | 노드 간 통신·NAT 중계 트래픽 보호 |
+| In | 210 | allow | `0.0.0.0/0` | 80 | Reverse Proxy HTTP |
+| In | 220 | allow | `0.0.0.0/0` | 443 | Reverse Proxy HTTPS |
+| In | 230 | allow | `0.0.0.0/0` | 1024-65535 | outbound(NAT·이미지 pull)의 인터넷 응답 복귀 |
+| Out | 100~ | **deny** | `blocked_cidrs` | all | 차단 대상엔 응답도 안 보냄(완전 격리) |
+| Out | 200 | allow | `0.0.0.0/0` | all | RP→worker, NAT→인터넷, 사용자 응답 |
+
+- `blocked_cidrs`가 비어 있으면 deny 규칙은 생성되지 않고, allow 규칙만으로 동작한다(안전한 기본값).
+- ephemeral port(230) 허용을 빠뜨리면 NAT 경유 outbound의 응답이 막혀 노드의 인터넷 통신이 끊긴다. stateless NACL의 대표적 함정이다.
+- Private Subnet에는 NACL을 두지 않는다. 외부에서 직접 들어오는 경로가 없어 악성 IP가 닿을 일이 없기 때문이다.
+
+**사용 방법**
+
+차단할 IP가 생기면 `blocked_cidrs`에 CIDR로 추가하고 `apply`한다.
+
+```hcl
+# tfvars 예시
+blocked_cidrs = ["203.0.113.10/32", "198.51.100.0/24"]
+```
+
+**검증**
+
+실제로 차단이 동작하는지 두 출처(차단 IP / 비차단 IP)에서 Reverse Proxy로 접근해 비교했다. NACL의 deny는 inbound이므로, RP에 직접 도달하는 외부 트래픽으로 검증한다(SSM 불필요).
+
+- 검증용으로 **한 출처의 공인 IP를 `blocked_cidrs`에 넣고** RP만 띄운 뒤(`-target`), 두 기기에서 `curl http://<reverse_proxy_public_ip>` 실행.
+- **차단 IP(집 네트워크)** → 연결이 서브넷 경계에서 drop되어 `curl: (28) Connection timed out`.
+- **비차단 IP(모바일 핫스팟 등 다른 공인 IP)** → NACL을 통과해 RP에 도달, `HTTP 200`(nginx 응답).
+
+같은 명령이 출처 IP에 따라 **timeout vs 200**으로 갈리는 것으로, deny 규칙이 특정 출처에만, 그리고 인스턴스(SG) 이전 단계에서 동작함을 확인했다. (Security Group은 출처를 deny할 수 없어 이 차이를 만들 수 없다.)
+
+Reverse Proxy IP가 `3.38.188.169`일 때, 같은 `curl` 명령의 결과:
+
+**비차단 IP(모바일 핫스팟) → 연결 성공**
+
+`Established connection`이 뜨고 HTTP 요청이 전송된다. NACL을 통과해 RP에 도달했다.
+
+![NACL 비차단 IP에서 RP 접속 성공](./images/nacl-test-allowed.png)
+
+**차단 IP(집 공인 IP) → timeout**
+
+`Trying 3.38.188.169:80...`에서 멈춘 채 응답이 없다. 서브넷 경계의 NACL deny가 연결을 drop했다.
+
+![NACL 차단 IP에서 RP 접속 차단](./images/nacl-test-blocked.png)

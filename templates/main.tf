@@ -127,3 +127,105 @@ resource "aws_security_group_rule" "node_to_node_all" {
   source_security_group_id = local.cluster_node_sg_ids[each.value[1]]
   security_group_id        = local.cluster_node_sg_ids[each.value[0]]
 }
+
+# -----------------------------------------------
+# Network ACL (Public Subnet) — 악성 IP 차단 (이중 방어선)
+# -----------------------------------------------
+# Reverse Proxy가 위치한 Public Subnet의 경계 방화벽.
+# Security Group은 allow 전용이라 공개 서비스를 0.0.0.0/0으로 열 수밖에 없고
+# 특정 악성 IP를 골라 막을 수 없다. NACL은 deny가 가능하므로, 트래픽 공격 같은
+# 알려진 악성 출처를 서브넷 경계(인스턴스 도달 전)에서 차단한다.
+#
+# NACL은 stateless라 응답 트래픽(ephemeral port)까지 직접 허용해야 하며, 규칙은
+# rule_number 오름차순으로 평가되어 먼저 매치되면 종료된다. 따라서 deny(100번대)를
+# allow(200번대)보다 앞에 둔다. (inbound·outbound 번호 공간은 서로 독립적이다.)
+resource "aws_network_acl" "public" {
+  vpc_id     = module.vpc.vpc_id
+  subnet_ids = [module.vpc.public_subnet_id]
+
+  tags = {
+    Name = "${var.cluster_name}-public-nacl"
+  }
+}
+
+# (1) 악성 IP 차단 — inbound. 최우선(가장 낮은 번호)으로 평가된다.
+resource "aws_network_acl_rule" "public_deny_in" {
+  count = length(var.blocked_cidrs)
+
+  network_acl_id = aws_network_acl.public.id
+  rule_number    = 100 + count.index
+  egress         = false
+  protocol       = "-1"
+  rule_action    = "deny"
+  cidr_block     = var.blocked_cidrs[count.index]
+}
+
+# (1) 악성 IP 차단 — outbound. 차단 대상에는 응답도 보내지 않아 완전히 격리한다.
+resource "aws_network_acl_rule" "public_deny_out" {
+  count = length(var.blocked_cidrs)
+
+  network_acl_id = aws_network_acl.public.id
+  rule_number    = 100 + count.index
+  egress         = true
+  protocol       = "-1"
+  rule_action    = "deny"
+  cidr_block     = var.blocked_cidrs[count.index]
+}
+
+# (2) VPC 내부 트래픽 허용 — inbound. 노드 간 통신, Private 노드가 NAT로 보내는
+#     outbound 중계 트래픽 등 VPC 내부 흐름이 끊기지 않도록 VPC 전체를 허용한다.
+resource "aws_network_acl_rule" "public_allow_vpc_in" {
+  network_acl_id = aws_network_acl.public.id
+  rule_number    = 200
+  egress         = false
+  protocol       = "-1"
+  rule_action    = "allow"
+  cidr_block     = var.vpc_cidr
+}
+
+# (3) 서비스 inbound — Reverse Proxy의 HTTP(80) / HTTPS(443)
+resource "aws_network_acl_rule" "public_allow_http_in" {
+  network_acl_id = aws_network_acl.public.id
+  rule_number    = 210
+  egress         = false
+  protocol       = "tcp"
+  rule_action    = "allow"
+  cidr_block     = "0.0.0.0/0"
+  from_port      = 80
+  to_port        = 80
+}
+
+resource "aws_network_acl_rule" "public_allow_https_in" {
+  network_acl_id = aws_network_acl.public.id
+  rule_number    = 220
+  egress         = false
+  protocol       = "tcp"
+  rule_action    = "allow"
+  cidr_block     = "0.0.0.0/0"
+  from_port      = 443
+  to_port        = 443
+}
+
+# (4) ephemeral port inbound — stateless이므로, 노드/RP가 시작한 outbound(NAT 경유,
+#     이미지 pull 등)에 대한 인터넷의 응답이 되돌아 들어오는 경로를 열어야 한다.
+resource "aws_network_acl_rule" "public_allow_ephemeral_in" {
+  network_acl_id = aws_network_acl.public.id
+  rule_number    = 230
+  egress         = false
+  protocol       = "tcp"
+  rule_action    = "allow"
+  cidr_block     = "0.0.0.0/0"
+  from_port      = 1024
+  to_port        = 65535
+}
+
+# (5) outbound 전체 허용 — RP→worker, NAT→인터넷, 사용자 응답 등.
+#     악성 IP는 위 deny(100번대)에서 이미 걸러진다.
+resource "aws_network_acl_rule" "public_allow_all_out" {
+  network_acl_id = aws_network_acl.public.id
+  rule_number    = 200
+  egress         = true
+  protocol       = "-1"
+  rule_action    = "allow"
+  cidr_block     = "0.0.0.0/0"
+}
