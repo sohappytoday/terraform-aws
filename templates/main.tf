@@ -12,15 +12,16 @@ module "control_plane" {
   for_each = var.control_plane_nodes
   source   = "./modules/ec2"
 
-  instance_type    = each.value.instance_type
-  instance_name    = each.value.instance_name
-  root_volume_size = each.value.root_volume_size
-  root_volume_type = each.value.root_volume_type
-  key_pair_name    = aws_key_pair.worker_node.key_name
-  ssh_allowed_cidr = var.control_plane_ssh_allowed_cidr
-  vpc_id           = module.vpc.vpc_id
-  subnet_id        = module.vpc.public_subnet_id
-  user_data        = <<-EOF
+  instance_type        = each.value.instance_type
+  instance_name        = each.value.instance_name
+  root_volume_size     = each.value.root_volume_size
+  root_volume_type     = each.value.root_volume_type
+  key_pair_name        = aws_key_pair.worker_node.key_name
+  ssh_allowed_cidr     = var.control_plane_ssh_allowed_cidr
+  vpc_id               = module.vpc.vpc_id
+  subnet_id            = module.vpc.public_subnet_id
+  iam_instance_profile = aws_iam_instance_profile.ssm.name
+  user_data            = <<-EOF
     #!/bin/bash
     hostnamectl set-hostname ${each.key}
   EOF
