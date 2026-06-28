@@ -30,6 +30,7 @@ Kubernetes 클러스터를 올리려면 그 아래에 네트워크(VPC, 서브�
   - [1단계: SSM IAM과 VPC Endpoint 구성 (완료)](#1단계-ssm-iam과-vpc-endpoint-구성-완료)
   - [2단계: control-plane Private 이동과 NAT Instance (완료)](#2단계-control-plane-private-이동과-nat-instance-완료)
     - [트러블슈팅: Private 이동 후 인터넷 outbound 단절](#트러블슈팅-private-이동-후-인터넷-outbound-단절)
+  - [3단계: Reverse Proxy (완료)](#3단계-reverse-proxy-완료)
 
 ---
 
@@ -370,7 +371,7 @@ v3는 한 번에 적용하지 않고, 의존 관계 순서대로 단계를 나�
 |---|---|---|
 | 1단계 | SSM IAM(Role/Instance Profile) + VPC Interface Endpoint 구성 | 완료 |
 | 2단계 | control-plane을 Private Subnet으로 이동, Public IP·SSH inbound 제거 (+ NAT Instance) | 완료 |
-| 3단계 | Reverse Proxy(Nginx) EC2 추가 및 Worker로의 라우팅 구성 | 예정 |
+| 3단계 | Reverse Proxy(Nginx) EC2 추가 및 Worker로의 라우팅 구성 | 완료 |
 | 4단계 | NACL 도입 (서브넷 레벨 이중 방어선) | 예정 |
 
 1단계를 먼저 하는 이유는, control-plane을 Private로 옮기기(2단계) 전에 SSM 접근 경로(IAM + Endpoint)가 먼저 갖춰져 있어야 하기 때문이다. 순서가 바뀌면 control-plane이 Private로 가는 순간 접근 수단이 사라진다. NACL(4단계)은 stateless라 잘못 적용하면 정상 트래픽까지 막으므로 맨 마지막에 둔다.
@@ -426,11 +427,10 @@ NACL은 stateless이기 때문에 인바운드와 아웃바운드 규칙을 각�
    ▼
 Reverse Proxy EC2        ← Public Subnet, Public IP 보유
    │
-   │ HTTP (8080, Private IP)
+   │ HTTP (NodePort 30080, Private IP)
    ▼
 Worker Node EC2          ← Private Subnet, Public IP 없음
-   │
-   │
+   │ kube-proxy → Ingress Controller (L7 경로 라우팅)
    ▼
 App Pod (컨테이너)
 ```
@@ -461,13 +461,13 @@ kubectl (로컬에서 localhost:6443으로 접근)
 |---|---|---|---|
 | Inbound | 80 | 0.0.0.0/0 | HTTP |
 | Inbound | 443 | 0.0.0.0/0 | HTTPS |
-| Outbound | 8080 | Worker Node SG | Worker Node로만 포워딩 |
+| Outbound | 30080 (NodePort) | Worker Node SG | Worker의 Ingress NodePort로 포워딩 |
 
 **Worker Node SG (Private Subnet)**
 
 | 방향 | 포트 | 출처/대상 | 설명 |
 |---|---|---|---|
-| Inbound | 8080 | Reverse Proxy SG | Reverse Proxy에서 오는 트래픽만 허용 |
+| Inbound | 30080 (NodePort) | Reverse Proxy SG | Reverse Proxy에서 오는 트래픽만 허용 |
 | Outbound | 443 | 0.0.0.0/0 | 컨테이너 이미지 pull 등 외부 통신 |
 
 **Control Plane SG (Private Subnet)**
@@ -572,3 +572,39 @@ NAT는 노드가 **먼저** 외부로 나가는 outbound만을 위한 것이다.
 | NAT Instance | t3.micro | Public Subnet | 있음 | 직접 (IGW) |
 | control-plane | c7i-flex.large | Private Subnet | 없음 | NAT 경유 |
 | worker-node | c7i-flex.large | Private Subnet | 없음 | NAT 경유 |
+
+### 3단계: Reverse Proxy (완료)
+
+worker-node는 Private Subnet에 있어 외부 사용자가 직접 접근할 수 없다. 외부 트래픽의 **유일한 인바운드 진입점**으로 Public Subnet에 Reverse Proxy(Nginx) EC2를 두고, 사용자 요청을 worker의 Ingress NodePort로 포워딩한다. worker는 계속 Private로 숨긴 채 서비스를 노출하기 위함이다.
+
+**구성한 것**
+
+| 구분 | 리소스 | 위치 |
+|---|---|---|
+| Reverse Proxy | Nginx EC2(`t3.micro`) + SG(80/443 from `0.0.0.0/0`) | `modules/reverse-proxy` |
+| 포워딩 경로 | worker NodePort(30080)를 **Reverse Proxy SG에서만** 허용하는 SG 규칙 | `main.tf` |
+
+- Nginx는 `user_data`로 설치되며, worker의 private IP 목록을 Terraform이 주입해 `worker:30080`(Ingress NodePort)으로 포워딩하도록 설정된다.
+- worker NodePort는 `0.0.0.0/0`이 아니라 **Reverse Proxy SG 출처로만** 열려, 외부에서 NodePort 직접 접근이 차단된다.
+- 인스턴스 타입은 NAT와 동일하게 Free Tier 제약으로 `t3.micro`를 사용한다.
+
+**Ingress와 NodePort의 역할 분담 (L4 vs L7)**
+
+외부 Reverse Proxy는 경로를 따지지 않고 모든 요청을 **같은 NodePort 하나로 전달**하는 L4 전달자다. `/hello` 같은 경로 라우팅은 클러스터 안 **Ingress Controller(L7)** 가 담당한다.
+
+- NodePort(kube-proxy)는 L4라 HTTP path를 보지 않고 TCP 스트림을 그대로 흘려보낸다.
+- path 정보는 그 연결 안에 실려 Ingress Controller까지 가고, 거기서 HTTP를 파싱해 Ingress 규칙(`/hello → service-hello`)으로 분배한다.
+- 백엔드 Service는 ClusterIP(내부 전용)이고, 외부 입구 NodePort는 Ingress Controller 하나만 가진다.
+
+```
+사용자 → Reverse Proxy:80 → worker:30080(NodePort) → kube-proxy → Ingress Controller(L7) → service → 파드
+```
+
+**검증**
+
+쿠버네티스·Ingress Controller가 아직 없는 상태에서 인프라 경로만 검증했다.
+
+- 외부에서 `curl http://<reverse_proxy_public_ip>` → `502 Bad Gateway (nginx)` : Nginx가 떠서 NodePort로 포워딩을 시도함(인바운드·SG 정상, 백엔드만 없음).
+- Reverse Proxy에서 `curl http://<worker_private_ip>:30080` → `Connection refused` : RP→worker NodePort 경로와 SG 규칙이 정상(포트는 닿고 listen하는 서비스만 없음).
+
+실제 end-to-end 동작(`curl`로 앱 응답 확인)은 클러스터에 Ingress Controller를 설치한 뒤 검증한다.
