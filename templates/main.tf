@@ -73,6 +73,36 @@ resource "aws_route" "private_to_nat" {
   network_interface_id   = module.nat.network_interface_id
 }
 
+# Reverse Proxy (Public Subnet)
+# 외부 사용자 트래픽의 유일한 진입점. 80/443으로 받아 worker의 Ingress NodePort로
+# 포워딩한다. worker는 Private에 숨긴 채 서비스를 노출하기 위함.
+module "reverse_proxy" {
+  source = "./modules/reverse-proxy"
+
+  name                 = var.cluster_name
+  vpc_id               = module.vpc.vpc_id
+  subnet_id            = module.vpc.public_subnet_id
+  instance_type        = var.reverse_proxy_instance_type
+  key_pair_name        = aws_key_pair.worker_node.key_name
+  iam_instance_profile = aws_iam_instance_profile.ssm.name
+  upstream_ips         = [for k, m in module.worker_node : m.private_ip]
+  ingress_nodeport     = var.ingress_nodeport
+}
+
+# Reverse Proxy → Worker의 Ingress NodePort 허용.
+# 외부 진입은 오직 Reverse Proxy를 통해서만 worker에 닿게 한다(SG 참조).
+resource "aws_security_group_rule" "worker_from_reverse_proxy" {
+  for_each = module.worker_node
+
+  type                     = "ingress"
+  description              = "Ingress NodePort from reverse proxy"
+  from_port                = var.ingress_nodeport
+  to_port                  = var.ingress_nodeport
+  protocol                 = "tcp"
+  source_security_group_id = module.reverse_proxy.security_group_id
+  security_group_id        = each.value.security_group_id
+}
+
 # 모든 클러스터 노드(control-plane + worker)의 SG를 한데 모음
 locals {
   cluster_node_sg_ids = merge(

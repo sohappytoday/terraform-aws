@@ -98,3 +98,19 @@ variable "nat_instance_type" {
   default     = "t3.micro"
 }
 
+# -----------------------------------------------
+# Reverse Proxy
+# -----------------------------------------------
+
+variable "reverse_proxy_instance_type" {
+  type        = string
+  description = "Reverse Proxy 인스턴스 타입 (free-tier 가능 타입)"
+  default     = "t3.micro"
+}
+
+variable "ingress_nodeport" {
+  type        = number
+  description = "worker에서 Ingress Controller가 노출되는 NodePort. Reverse Proxy가 이 포트로 포워딩"
+  default     = 30080
+}
+

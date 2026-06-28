@@ -57,3 +57,13 @@ output "nat_public_ip" {
   value       = module.nat.public_ip
   description = "NAT 인스턴스 Public IP"
 }
+
+output "reverse_proxy_instance_id" {
+  value       = module.reverse_proxy.instance_id
+  description = "Reverse Proxy 인스턴스 ID"
+}
+
+output "reverse_proxy_public_ip" {
+  value       = module.reverse_proxy.public_ip
+  description = "Reverse Proxy Public IP (외부 사용자 진입점)"
+}
