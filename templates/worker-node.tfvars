@@ -8,4 +8,10 @@ worker_nodes = {
     root_volume_size = 30
     root_volume_type = "gp3"
   }
+  "worker-2" = {
+    instance_type    = "c7i-flex.large"
+    instance_name    = "worker-node-2"
+    root_volume_size = 30
+    root_volume_type = "gp3"
+  }
 }

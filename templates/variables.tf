@@ -88,6 +88,12 @@ variable "control_plane_ssh_allowed_cidr" {
   default     = []
 }
 
+variable "apiserver_port" {
+  type        = number
+  description = "Kubernetes apiserver 포트. 내부 NLB listener/target group과 control-plane SG 허용에 사용"
+  default     = 6443
+}
+
 # -----------------------------------------------
 # NAT 인스턴스
 # -----------------------------------------------

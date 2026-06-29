@@ -50,6 +50,35 @@ module "worker_node" {
   EOF
 }
 
+# 내부 NLB — control-plane apiserver(6443)의 단일 고정 엔드포인트.
+# CP 3대를 하나의 안정 엔드포인트로 묶어 worker join·kubectl이 특정 CP에
+# 고정되지 않게 한다. internal이라 VPC 안에서만 접근 가능하다.
+module "nlb" {
+  source = "./modules/nlb"
+
+  name           = var.cluster_name
+  vpc_id         = module.vpc.vpc_id
+  subnet_ids     = [module.vpc.private_subnet_id]
+  instance_ids   = { for k, m in module.control_plane : k => m.instance_id }
+  apiserver_port = var.apiserver_port
+}
+
+# control-plane SG가 NLB 경유 apiserver 트래픽을 받도록 6443을 허용한다.
+# NLB(instance 타겟)의 데이터 트래픽은 클라이언트 소스 IP를 보존하므로 노드 간
+# all-to-all로 이미 닿지만, NLB health check는 노드 SG가 아닌 NLB ENI(서브넷
+# 사설 IP)에서 오므로 별도 허용이 필요하다. VPC CIDR 전체에 6443을 연다.
+resource "aws_security_group_rule" "control_plane_apiserver_from_vpc" {
+  for_each = module.control_plane
+
+  type              = "ingress"
+  description       = "apiserver (6443) from VPC (NLB traffic + health check)"
+  from_port         = var.apiserver_port
+  to_port           = var.apiserver_port
+  protocol          = "tcp"
+  cidr_blocks       = [var.vpc_cidr]
+  security_group_id = each.value.security_group_id
+}
+
 # NAT 인스턴스 (Public Subnet)
 # control-plane·worker가 모두 Private Subnet으로 이동하면서 인터넷 outbound 경로가
 # 사라진다(패키지 설치·이미지 pull 불가). NAT Gateway는 비싸므로, 작은 EC2를

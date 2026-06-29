@@ -43,6 +43,11 @@ output "control_plane_private_ips" {
   description = "control-plane별 Private IP"
 }
 
+output "control_plane_endpoint" {
+  value       = module.nlb.dns_name
+  description = "내부 NLB DNS 이름. kubeadm --control-plane-endpoint 로 사용하는 apiserver 단일 엔드포인트"
+}
+
 output "ssh_user" {
   value       = var.ssh_user
   description = "EC2 SSH 접속 사용자"
