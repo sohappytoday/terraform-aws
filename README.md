@@ -32,6 +32,8 @@ Kubernetes 클러스터를 올리려면 그 아래에 네트워크(VPC, 서브�
     - [트러블슈팅: Private 이동 후 인터넷 outbound 단절](#트러블슈팅-private-이동-후-인터넷-outbound-단절)
   - [3단계: Reverse Proxy (완료)](#3단계-reverse-proxy-완료)
   - [4단계: NACL 도입 (완료)](#4단계-nacl-도입-완료)
+  - [5단계: control-plane HA와 내부 NLB (완료)](#5단계-control-plane-ha와-내부-nlb-완료)
+    - [트러블슈팅: 내부 NLB 헤어핀 문제](#트러블슈팅-내부-nlb-헤어핀-문제)
 
 ---
 
@@ -41,7 +43,7 @@ Kubernetes 클러스터를 올리려면 그 아래에 네트워크(VPC, 서브�
 |---|---|---|---|
 | v1 | LightSail(control-plane) + EC2(worker-node) | Public IP 통신 | 기본 클러스터 프로비저닝 구성 |
 | v2 | EC2(control-plane) + EC2(worker-node) | VPC 기반 private 통신 | VPC 구성 및 control-plane EC2 전환 |
-| v3 | EC2(reverse-proxy, public) + EC2(control-plane + worker-node, private) | Public/Private Subnet 분리, SSM 내부망 접근 | Reverse Proxy 도입 및 control-plane 폐쇄망 구성 |
+| v3 | EC2(reverse-proxy, public) + control-plane 3대 + worker-node 2대(private) + 내부 NLB | Public/Private Subnet 분리, SSM 내부망 접근, apiserver 내부 NLB | Reverse Proxy 도입, control-plane 폐쇄망 + HA(쿼럼·단일 엔드포인트) 구성 |
 
 ---
 
@@ -374,6 +376,7 @@ v3는 한 번에 적용하지 않고, 의존 관계 순서대로 단계를 나�
 | 2단계 | control-plane을 Private Subnet으로 이동, Public IP·SSH inbound 제거 (+ NAT Instance) | 완료 |
 | 3단계 | Reverse Proxy(Nginx) EC2 추가 및 Worker로의 라우팅 구성 | 완료 |
 | 4단계 | NACL 도입 (서브넷 레벨 이중 방어선) | 완료 |
+| 5단계 | control-plane 3대 HA 확장 + apiserver(6443) 앞 내부 NLB 단일 엔드포인트 | 완료 |
 
 1단계를 먼저 하는 이유는, control-plane을 Private로 옮기기(2단계) 전에 SSM 접근 경로(IAM + Endpoint)가 먼저 갖춰져 있어야 하기 때문이다. 순서가 바뀌면 control-plane이 Private로 가는 순간 접근 수단이 사라진다. NACL(4단계)은 stateless라 잘못 적용하면 정상 트래픽까지 막으므로 맨 마지막에 둔다.
 
@@ -692,3 +695,53 @@ Reverse Proxy IP가 `3.38.188.169`일 때, 같은 `curl` 명령의 결과:
 `Trying 3.38.188.169:80...`에서 멈춘 채 응답이 없다. 서브넷 경계의 NACL deny가 연결을 drop했다.
 
 ![NACL 차단 IP에서 RP 접속 차단](./images/nacl-test-blocked.png)
+
+### 5단계: control-plane HA와 내부 NLB (완료)
+
+단일 control-plane은 그 노드가 죽으면 클러스터 제어가 전부 멈추는 SPOF다. control-plane을 3대로 늘려 가용성을 확보하고, apiserver(6443) 앞에 내부 NLB를 두어 "어느 control-plane으로 갈지"를 단일 고정 엔드포인트로 묶는다.
+
+**구성한 것**
+
+| 구분 | 리소스 | 위치 |
+|---|---|---|
+| 내부 로드밸런서 | `aws_lb`(network, internal, cross-zone) | `modules/nlb` |
+| apiserver 타겟 | `aws_lb_target_group`(TCP 6443) + control-plane 3대 attachment | `modules/nlb` |
+| listener | `aws_lb_listener`(TCP 6443 → forward) | `modules/nlb` |
+| SG 허용 | control-plane SG에 VPC CIDR→6443 inbound | `main.tf` (root) |
+| 엔드포인트 출력 | `control_plane_endpoint`(NLB DNS) | `outputs.tf` (root) |
+
+**왜 control-plane 3대 / worker-node 2대인가 (아키텍처 설계 이유)**
+
+- **control-plane 3대 — 쿼럼(quorum)**: control-plane 1대는 그 노드가 죽으면 클러스터 제어(apiserver·etcd)가 전부 멈추는 SPOF다. control-plane은 etcd 합의 기반으로 동작하므로 과반(quorum)이 살아 있어야 쓰기가 가능하다. 2대는 한 대만 죽어도 과반이 깨져 의미가 없고, 3대여야 1대 장애를 견딘다(2/3 생존 = 과반 유지). 그래서 홀수 최소 단위인 3대로 둔다.
+- **worker-node 2대 — 이중화**: worker 1대면 그 노드가 죽을 때 그 위의 파드가 전부 사라진다. 최소 2대로 두어 한 대가 빠져도 다른 대에서 파드를 계속 띄울 수 있게 한다. (데모 매니페스트 `manifests/nginx-demo.yaml`도 replicas 2 + `topologySpreadConstraints`로 두 worker에 분산한다.)
+
+**worker-node 인스턴스 타입 선택 trade-off**
+
+worker는 메모리 여유가 많을수록 좋아 RAM이 큰 타입을 원했다. 다만 Free Plan에서 쓸 수 있는 4GB 이상 타입은 `c7i-flex.large`(4GB)와 `m7i-flex.large`(8GB) 둘뿐이었다. 비교군으로 `t3.medium`(4GB)을 검토했는데, 오히려 t3.medium이 더 저렴했고 **CPU 버스트(burst)** 가 있어 특정 시간대 부하가 몰릴 때 더 잘 버틸 수 있다는 점에서 이쪽을 선택하려 했다. 그러나 t3.medium은 Free Plan에서 생성이 차단되는 타입이라 지금 단계에서는 쓸 수 없었다. 그래서 우선 Free Plan에서 허용되는 `c7i-flex.large`로 두고, Free Plan의 크레딧($200)을 모두 소진해 일반 요금제로 전환하는 시점에 t3.medium으로 바꿀 계획이다.
+
+**왜 내부(internal) NLB인가**
+
+- HA에서는 worker join·노드 내부 통신·로컬 kubectl이 특정 control-plane IP에 고정되면 안 된다(그 노드가 죽으면 끊김). 단일 엔드포인트가 필요하다.
+- keepalived VIP는 AWS에서 VRRP/임의 IP 문제로 까다로워, AWS 관리형 내부 NLB로 처리한다.
+- apiserver는 인터넷에 노출하지 않는다(`scheme=internal`). 외부 노출은 기존 Reverse Proxy(80/443)만 담당하고, apiserver(6443)는 VPC 안에서만 접근한다.
+- NLB의 DNS 이름을 `control_plane_endpoint`로 출력해, kubeadm `--control-plane-endpoint` 값으로 사용한다.
+
+**한계점**
+
+지금 구성은 control-plane 3대 + 쿼럼 + 단일 엔드포인트까지 갖췄지만, **아직 완벽한 HA 클러스터라고 할 수는 없다.** 모든 노드와 NLB가 **같은 가용 영역(AZ)** 에 있기 때문이다. 그 AZ 자체에 장애가 나면 control-plane 3대와 worker 2대가 동시에 사라진다. 진짜 가용 영역 장애 내성을 갖추려면 노드를 여러 AZ에 분산해야 한다. 완벽한 HA 클러스터를 위해 멀티-AZ 구성 등을 계속 추가해 나갈 예정이다.
+
+**트러블슈팅: 내부 NLB 헤어핀 문제**
+
+control-plane을 NLB 타겟으로 등록한 뒤, control-plane 노드가 자기가 속한 NLB 엔드포인트로 다시 접속하는 경로(`kubeadm join --control-plane`, kubelet→apiserver, `kubeadm token create` 등)가 실패했다.
+
+원인은 NLB가 **헤어핀(loopback)을 지원하지 않기** 때문이다. client IP 보존(TCP 타겟 그룹의 기본값)이 켜져 있으면, 타겟으로 등록된 인스턴스가 자신이 등록된 NLB로 보낸 요청이 자기 자신으로 라우팅되면서 연결이 성립하지 못한다.
+
+target group에 `preserve_client_ip = false`를 설정해 해결했다. 소스 IP가 NLB 노드 IP로 치환되어 self-routing이 정상 동작한다. 이 설정의 부수 효과로 apiserver로 들어오는 모든 트래픽의 소스가 VPC 대역이 되어, control-plane SG는 "VPC CIDR에서 6443 허용" 한 줄로 헬스 체크와 실제 트래픽을 함께 커버할 수 있다.
+
+**검증**
+
+`apply` 후 control-plane 1대에 SSM으로 접속해 `kubectl get nodes`로 클러스터 상태를 확인했다.
+
+- control-plane 3대(master-1/2/3)가 모두 `Ready`, ROLES `control-plane`으로 표시됐다. master-2/3이 control-plane으로 join되었다는 것은 NLB 엔드포인트를 통한 HA join이 성공했음을 의미한다.
+- worker-node 2대(worker-1/2)가 모두 `Ready`.
+- 데모 매니페스트 apply 시 replicas 2가 두 worker에 분산되어 정상 기동.
